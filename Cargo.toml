@@ -1,0 +1,11 @@
+[package]
+name = "gsbservice"
+version = "0.1.0"
+authors = ["Colin O'Brien <cobrien@rapid7.com>"]
+
+[dependencies]
+error-chain = "*"
+hyper-rustls = "*"
+hyper = "*"
+serde = "0.8.*"
+serde_json = "0.8.*"
