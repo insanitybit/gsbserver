@@ -11,7 +11,8 @@ extern crate error_chain;
 extern crate serde_derive;
 #[macro_use]
 extern crate serde;
-
+#[macro_use]
+extern crate log;
 // extern crate dotenv;
 extern crate hyper_rustls;
 extern crate hyper;

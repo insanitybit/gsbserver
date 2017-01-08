@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 pub trait Database: Send + Sync {
     fn update(&mut self, &FetchResponse) -> Result<()>;
-    fn validate(&mut self) -> Result<()>;
+    fn validate(&mut self, &Checksum) -> Result<()>;
 }
 
 pub struct HashDB {
@@ -100,7 +100,7 @@ impl Database for HashDB {
         Ok(())
     }
 
-    fn validate(&mut self) -> Result<()> {
+    fn validate(&mut self, checksum: &Checksum) -> Result<()> {
         unimplemented!()
     }
 }

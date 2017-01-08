@@ -161,6 +161,8 @@ pub struct FetchRequest<'a> {
 pub struct FetchResponse {
     #[serde(rename = "listUpdateResponses")]
     pub list_update_responses: Vec<ListUpdateResponse>,
+    #[serde(default, rename = "minimumWaitDuration")]
+    pub minimum_wait_duration: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -200,8 +202,6 @@ pub struct ListUpdateResponse {
     #[serde(rename = "newClientState")]
     pub new_client_state: String,
     checksum: Checksum,
-    #[serde(default, rename = "minimumWaitDuration")]
-    pub minimum_wait_duration: usize,
 }
 
 
