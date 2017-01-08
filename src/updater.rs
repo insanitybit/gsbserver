@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::env;
 use std::str;
 use std::thread;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 
 enum CurrentState {
@@ -25,7 +25,7 @@ pub struct GSBUpdater<'a, T>
 {
     update_client: Arc<Mutex<UpdateClient<'a>>>,
     db: &'a mut T,
-    period: usize, // 30 seconds - will be 30 minutes later...
+    period: AtomicUsize,
     thread: Option<thread::JoinHandle<Result<()>>>,
     should_execute: AtomicBool,
 }
@@ -37,7 +37,7 @@ impl<'a, T> GSBUpdater<'a, T>
         Ok(GSBUpdater {
             update_client: Arc::new(Mutex::new(UpdateClient::new(api_key))),
             db: db,
-            period: 30,
+            period: AtomicUsize::new(30), // 30 seconds - will be 30 minutes later...
             thread: None,
             should_execute: AtomicBool::new(false),
         })
