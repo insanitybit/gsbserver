@@ -10,60 +10,59 @@ use serde_json;
 use std::io::prelude::*;
 use std::collections::HashMap;
 
-// #[derive(Debug, Clone, Serialize, Deserialize)]
-// pub struct ThreatDescriptor {
-//     threat_type: ThreatType,
-//     platform_type: PlatformType,
-//     threat_entry_type: ThreatEntryType,
-// }
-
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Copy)]
+pub struct ThreatDescriptor {
+    pub threat_type: ThreatType,
+    pub platform_type: PlatformType,
+    pub threat_entry_type: ThreatEntryType,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Checksum {
-    sha256: String,
+    pub sha256: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RawHashes {
     #[serde(rename = "prefixSize")]
-    prefix_size: u32,
+    pub prefix_size: u32,
     #[serde(rename = "rawHashes")]
     pub raw_hashes: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RawIndices {
-    indices: Vec<u32>,
+    pub indices: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RiceDeltaEncoding {
     #[serde(rename = "firstValue")]
-    first_value: String,
+    pub first_value: String,
     #[serde(rename = "riceParameter")]
-    rice_parameter: u32,
+    pub rice_parameter: u32,
     #[serde(rename = "numEntries")]
-    num_entries: u32,
+    pub num_entries: u32,
     #[serde(rename = "encodedData")]
-    encoded_data: String,
+    pub encoded_data: String,
 }
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThreatEntrySet {
     #[serde(rename = "compressionType")]
-    compression_type: CompressionType,
+    pub compression_type: CompressionType,
     #[serde(default, rename = "rawHashes")]
     pub raw_hashes: RawHashes,
     #[serde(default, rename = "rawIndices")]
-    raw_indices: RawIndices,
+    pub raw_indices: RawIndices,
     #[serde(default, rename = "riceHashes")]
-    rice_hashes: RiceDeltaEncoding,
+    pub rice_hashes: RiceDeltaEncoding,
     #[serde(default, rename = "riceIndices")]
-    rice_indices: RiceDeltaEncoding,
+    pub rice_indices: RiceDeltaEncoding,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ResponseType {
     #[serde(rename = "RESPONSE_TYPE_UNSPECIFIED")]
     ResponseTypeUnspecified,
@@ -135,13 +134,13 @@ pub enum CompressionType {
 #[derive(Debug, Clone, Serialize)]
 pub struct Constraints<'a> {
     #[serde(rename = "maxDatabaseEntries")]
-    max_database_entries: u32,
+    pub max_database_entries: u32,
     #[serde(rename = "maxUpdateEntries")]
-    max_update_entries: u32,
+    pub max_update_entries: u32,
     #[serde(rename = "region")]
-    region: Option<&'a str>,
+    pub region: Option<&'a str>,
     #[serde(rename = "supportedCompressions")]
-    supported_compressions: Vec<CompressionType>,
+    pub supported_compressions: Vec<CompressionType>,
 }
 
 #[derive(Debug, Serialize)]
@@ -187,20 +186,22 @@ pub struct ListUpdateRequest<'a> {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ListUpdateResponse {
     #[serde(rename = "threatType")]
-    threat_type: ThreatType,
+    pub threat_type: ThreatType,
     #[serde(rename = "threatEntryType")]
-    threat_entry_type: ThreatEntryType,
+    pub threat_entry_type: ThreatEntryType,
     #[serde(rename = "platformType")]
-    platform_type: PlatformType,
+    pub platform_type: PlatformType,
     #[serde(rename = "responseType")]
-    response_type: ResponseType,
+    pub response_type: ResponseType,
     #[serde(default)]
     pub additions: Vec<ThreatEntrySet>,
     #[serde(default)]
-    removals: Vec<ThreatEntrySet>,
+    pub removals: Vec<ThreatEntrySet>,
     #[serde(rename = "newClientState")]
     pub new_client_state: String,
     checksum: Checksum,
+    #[serde(default, rename = "minimumWaitDuration")]
+    pub minimum_wait_duration: usize,
 }
 
 

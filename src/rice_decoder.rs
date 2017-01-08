@@ -2,7 +2,7 @@
 
 use errors::*;
 
-struct RiceDecoder<'a> {
+pub struct RiceDecoder<'a> {
     br: BitReader<'a>,
     k: u32, // Golomb-Rice parameter
 }
