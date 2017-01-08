@@ -6,8 +6,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 
-pub trait Database {
+pub trait Database: Send + Sync {
     fn update(&mut self, &FetchResponse) -> Result<()>;
+    fn validate(&mut self) -> Result<()>;
 }
 
 pub struct HashDB {
@@ -91,19 +92,16 @@ impl HashDB {
 impl Database for HashDB {
     fn update(&mut self, res: &FetchResponse) -> Result<()> {
         let rem_indices = try!(removals(res));
-
         let add_prefixes = try!(additions(res));
 
         try!(self.remove(&rem_indices));
-
-        // for (descriptor, (response_type, additions)) in add_prefixes {
-        //     if additions.is_empty() {
-        //         continue;
-        //     }
-        //
-        // }
+        try!(self.add(&add_prefixes));
 
         Ok(())
+    }
+
+    fn validate(&mut self) -> Result<()> {
+        unimplemented!()
     }
 }
 

@@ -10,6 +10,9 @@ use database::*;
 use std::collections::HashMap;
 use std::env;
 use std::str;
+use std::thread;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
 enum CurrentState {
     Running,
@@ -18,30 +21,39 @@ enum CurrentState {
 
 // Using the client, fetches updates periodically, storing the results in a database
 pub struct GSBUpdater<'a, T>
-    where T: Database
+    where T: 'a + Database
 {
-    update_client: UpdateClient<'a>,
-    db: T,
+    update_client: Arc<Mutex<UpdateClient<'a>>>,
+    db: &'a mut T,
+    period: usize, // 30 seconds - will be 30 minutes later...
+    thread: Option<thread::JoinHandle<Result<()>>>,
+    should_execute: AtomicBool,
 }
 
 impl<'a, T> GSBUpdater<'a, T>
     where T: Database
 {
-    pub fn new(api_key: &'a str, db: T) -> Result<GSBUpdater<'a, T>> {
+    pub fn new(api_key: &'a str, db: &'a mut T) -> Result<GSBUpdater<'a, T>> {
         Ok(GSBUpdater {
-            update_client: UpdateClient::new(api_key),
+            update_client: Arc::new(Mutex::new(UpdateClient::new(api_key))),
             db: db,
+            period: 30,
+            thread: None,
+            should_execute: AtomicBool::new(false),
         })
     }
 
     pub fn begin_update(&mut self) -> Result<()> {
-        let fetch_response = try!(self.update_client.fetch().send());
+        self.thread = Some(thread::spawn(|| {
+            loop {
+                let update_client = self.update_client.lock().unwrap();
 
-        try!(self.db.update(&fetch_response));
+                let fetch_response = try!(update_client.fetch().send());
 
-        // for (descriptor, hash_prefixes) in &hash_prefix_map {
-        //     // self.pg_conn.
-        // }
+                try!(self.db.update(&fetch_response));
+
+            }
+        }));
         Ok(())
     }
 
@@ -50,10 +62,6 @@ impl<'a, T> GSBUpdater<'a, T>
     }
 
     pub fn stop_updates() {
-        unimplemented!();
-    }
-
-    pub fn update() -> Result<()> {
         unimplemented!();
     }
 }
