@@ -31,26 +31,26 @@ pub struct GSBUpdater<'a, T>
 }
 
 impl<'a, T> GSBUpdater<'a, T>
-    where T: Database
+    where T: 'a + Database
 {
     pub fn new(api_key: &'a str, db: &'a mut T) -> Result<GSBUpdater<'a, T>> {
         Ok(GSBUpdater {
             update_client: Arc::new(Mutex::new(UpdateClient::new(api_key))),
             db: db,
-            period: AtomicUsize::new(30), // 30 seconds - will be 30 minutes later...
+            period: AtomicUsize::new(30), // 30 seconds - will be 30 minutes later...+
             thread: None,
             should_execute: AtomicBool::new(false),
         })
     }
 
-    pub fn begin_update(&mut self) -> Result<()> {
-        self.thread = Some(thread::spawn(|| {
+    pub fn begin_update(&'a mut self) -> Result<()> {
+        self.thread = Some(thread::spawn(move || {
             loop {
                 let update_client = self.update_client.lock().unwrap();
 
-                let fetch_response = try!(update_client.fetch().send());
+                let fetch_response = update_client.fetch().send().unwrap();
 
-                try!(self.db.update(&fetch_response));
+                self.db.update(&fetch_response).unwrap();
 
             }
         }));
