@@ -52,6 +52,40 @@ impl HashDB {
 
         Ok(())
     }
+
+    fn add(&mut self,
+           addition_map: &HashMap<ThreatDescriptor, (ResponseType, Vec<String>)>)
+           -> Result<()> {
+
+        for (descriptor, &(response_type, ref additions)) in addition_map {
+            if additions.is_empty() {
+                continue;
+            }
+
+            let mut cur_map = self.inner_db.lock().expect("Failed to attain lock for inner_db");
+
+            if let ResponseType::PartialUpdate = response_type {
+
+                let mut cur_hashes = match cur_map.get_mut(descriptor) {
+                    Some(h) => h,
+                    None => continue,
+                };
+
+                cur_hashes.extend_from_slice(&additions[..]);
+
+                cur_hashes.sort();
+            } else if let ResponseType::FullUpdate = response_type {
+
+                let mut cur_hashes = match cur_map.get_mut(descriptor) {
+                    Some(h) => h,
+                    None => continue,
+                };
+                *cur_hashes = additions.clone();
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Database for HashDB {
