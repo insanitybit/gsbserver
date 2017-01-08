@@ -28,7 +28,7 @@ pub struct RawHashes {
     #[serde(rename = "prefixSize")]
     prefix_size: u32,
     #[serde(rename = "rawHashes")]
-    raw_hashes: String,
+    pub raw_hashes: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -54,7 +54,7 @@ pub struct ThreatEntrySet {
     #[serde(rename = "compressionType")]
     compression_type: CompressionType,
     #[serde(default, rename = "rawHashes")]
-    raw_hashes: RawHashes,
+    pub raw_hashes: RawHashes,
     #[serde(default, rename = "rawIndices")]
     raw_indices: RawIndices,
     #[serde(default, rename = "riceHashes")]
