@@ -14,6 +14,8 @@ extern crate serde;
 #[macro_use]
 extern crate log;
 // extern crate dotenv;
+extern crate lru_cache;
+
 extern crate hyper_rustls;
 extern crate hyper;
 extern crate crypto;
