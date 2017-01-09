@@ -1,5 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::time::*;
+use std::hash::Hash;
 
 // A cache that allows for per-value timeout invalidation
 
@@ -9,13 +10,17 @@ pub enum LRUEntry<T> {
     Vacant,
 }
 
-pub struct LRU<K: Ord, T> {
-    cache: BTreeMap<K, (T, Instant, Duration)>,
+pub struct LRU<K: Hash + Eq, T> {
+    cache: HashMap<K, (T, Instant, Duration)>,
 }
 
 impl<K, T> LRU<K, T>
-    where K: Ord
+    where K: Hash + Eq
 {
+    pub fn new() -> LRU<K, T> {
+        LRU { cache: HashMap::new() }
+    }
+
     pub fn insert(&mut self, key: K, val: T, lifespan: Duration) {
         self.cache.insert(key, (val, Instant::now(), lifespan));
     }

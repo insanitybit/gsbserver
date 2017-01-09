@@ -26,7 +26,7 @@ pub struct GSBUpdater<'a, T>
     where T: 'a + Database
 {
     update_client: Arc<Mutex<UpdateClient<'a>>>,
-    db: &'a mut T,
+    db: &'a T,
     period: u64,
 }
 
@@ -35,7 +35,7 @@ unsafe impl<'a, T> Sync for GSBUpdater<'a, T> where T: 'a + Database {}
 impl<'a, T> GSBUpdater<'a, T>
     where T: 'a + Database
 {
-    pub fn new(api_key: &'a str, db: &'a mut T) -> GSBUpdater<'a, T> {
+    pub fn new(api_key: &'a str, db: &'a T) -> GSBUpdater<'a, T> {
         GSBUpdater {
             update_client: Arc::new(Mutex::new(UpdateClient::new(api_key))),
             db: db,

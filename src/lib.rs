@@ -22,5 +22,6 @@ extern crate serde_json;
 pub mod errors;
 pub mod lru;
 pub mod update_client;
+pub mod query_client;
 pub mod updater;
 pub mod database;

@@ -6,11 +6,13 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 
-pub trait Database: Send + Sync {
-    fn update(&mut self, &FetchResponse) -> Result<()>;
-    fn validate(&mut self, &Checksum) -> Result<()>;
+pub trait Database: Send + Sync + Clone {
+    fn query(&self, &str, ThreatDescriptor) -> Result<Option<()>>;
+    fn update(&self, &FetchResponse) -> Result<()>;
+    fn validate(&self, &Checksum) -> Result<()>;
 }
 
+#[derive(Clone)]
 pub struct HashDB {
     inner_db: Arc<Mutex<HashMap<ThreatDescriptor, Vec<String>>>>,
 }
@@ -21,7 +23,7 @@ impl HashDB {
     }
 
 
-    fn remove(&mut self,
+    fn remove(&self,
               removal_map: &HashMap<ThreatDescriptor, (ResponseType, HashSet<usize>)>)
               -> Result<()> {
 
@@ -29,6 +31,8 @@ impl HashDB {
             if removals.is_empty() {
                 continue;
             }
+
+            info!("Removing {:#?} from {:#?}", removals.len(), descriptor);
 
             let mut cur_map = self.inner_db.lock().expect("Failed to attain lock for inner_db");
 
@@ -54,7 +58,7 @@ impl HashDB {
         Ok(())
     }
 
-    fn add(&mut self,
+    fn add(&self,
            addition_map: &HashMap<ThreatDescriptor, (ResponseType, Vec<String>)>)
            -> Result<()> {
 
@@ -62,7 +66,7 @@ impl HashDB {
             if additions.is_empty() {
                 continue;
             }
-
+            info!("Adding {:#?} to {:#?}", additions.len(), descriptor);
             let mut cur_map = self.inner_db.lock().expect("Failed to attain lock for inner_db");
 
             if let ResponseType::PartialUpdate = response_type {
@@ -90,7 +94,7 @@ impl HashDB {
 }
 
 impl Database for HashDB {
-    fn update(&mut self, res: &FetchResponse) -> Result<()> {
+    fn update(&self, res: &FetchResponse) -> Result<()> {
         let rem_indices = try!(removals(res));
         let add_prefixes = try!(additions(res));
 
@@ -100,7 +104,11 @@ impl Database for HashDB {
         Ok(())
     }
 
-    fn validate(&mut self, checksum: &Checksum) -> Result<()> {
+    fn validate(&self, _checksum: &Checksum) -> Result<()> {
+        unimplemented!()
+    }
+
+    fn query(&self, url: &str, descriptor: ThreatDescriptor) -> Result<Option<()>> {
         unimplemented!()
     }
 }
