@@ -134,9 +134,7 @@ impl Database for HashDB {
             };
             let hash = result;
 
-            let dec_checksum = decode(&checksum.sha256).unwrap();
-
-            if hash != dec_checksum {
+            if hash != checksum.sha256.as_bytes() {
                 error!("Checksum failed {:?} != {:?}",
                        hash,
                        checksum.sha256.as_bytes());
