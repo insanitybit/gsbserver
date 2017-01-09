@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::time::*;
 use std::hash::Hash;
+use lru_cache::LruCache;
 
 // A cache that allows for per-value timeout invalidation
 
@@ -11,14 +11,14 @@ pub enum LRUEntry<T> {
 }
 
 pub struct LRU<K: Hash + Eq, T> {
-    cache: HashMap<K, (T, Instant, Duration)>,
+    cache: LruCache<K, (T, Instant, Duration)>,
 }
 
 impl<K, T> LRU<K, T>
     where K: Hash + Eq
 {
-    pub fn new() -> LRU<K, T> {
-        LRU { cache: HashMap::new() }
+    pub fn new(limit: usize) -> LRU<K, T> {
+        LRU { cache: LruCache::new(limit) }
     }
 
     pub fn insert(&mut self, key: K, val: T, lifespan: Duration) {
@@ -26,8 +26,8 @@ impl<K, T> LRU<K, T>
     }
 
     pub fn get(&mut self, key: &K) -> LRUEntry<&T> {
-        let (val, then, lifespan) = match self.cache.get(key) {
-            Some(&(ref val, then, lifespan)) => (val as *const T, then, lifespan),
+        let (val, then, lifespan) = match self.cache.get_mut(key) {
+            Some(&mut (ref val, then, lifespan)) => (val as *const T, then, lifespan),
             None => return LRUEntry::Vacant,
         };
 
