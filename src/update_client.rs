@@ -201,7 +201,7 @@ pub struct ListUpdateResponse {
     pub removals: Vec<ThreatEntrySet>,
     #[serde(rename = "newClientState")]
     pub new_client_state: String,
-    checksum: Checksum,
+    pub checksum: Checksum,
 }
 
 

@@ -1,6 +1,9 @@
 use update_client::*;
 use errors::*;
 
+use crypto::digest::Digest;
+use crypto::sha2::Sha256;
+use base64::*;
 use std;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -9,7 +12,7 @@ use std::sync::{Arc, Mutex};
 pub trait Database: Send + Sync + Clone {
     fn query(&self, &str, ThreatDescriptor) -> Result<Option<()>>;
     fn update(&self, &FetchResponse) -> Result<()>;
-    fn validate(&self, &Checksum) -> Result<()>;
+    fn validate(&self, &FetchResponse) -> Result<()>;
 }
 
 #[derive(Clone)]
@@ -36,10 +39,9 @@ impl HashDB {
 
             let mut cur_map = self.inner_db.lock().expect("Failed to attain lock for inner_db");
 
-            let cur_hashes = match cur_map.get_mut(descriptor) {
-                Some(h) => h,
-                None => continue,
-            };
+            let mut cur_hashes = cur_map.entry(*descriptor)
+                                        .or_insert(vec![]);
+
 
             let new_hashes: Vec<String> = cur_hashes.iter()
                                                     .enumerate()
@@ -71,21 +73,14 @@ impl HashDB {
 
             if let ResponseType::PartialUpdate = response_type {
 
-                let mut cur_hashes = match cur_map.get_mut(descriptor) {
-                    Some(h) => h,
-                    None => continue,
-                };
+                let mut cur_hashes = cur_map.entry(*descriptor)
+                                            .or_insert(vec![]);
 
                 cur_hashes.extend_from_slice(&additions[..]);
 
                 cur_hashes.sort();
             } else if let ResponseType::FullUpdate = response_type {
-
-                let mut cur_hashes = match cur_map.get_mut(descriptor) {
-                    Some(h) => h,
-                    None => continue,
-                };
-                *cur_hashes = additions.clone();
+                cur_map.insert(*descriptor, additions.clone());
             }
         }
 
@@ -104,11 +99,57 @@ impl Database for HashDB {
         Ok(())
     }
 
-    fn validate(&self, _checksum: &Checksum) -> Result<()> {
-        unimplemented!()
+    fn validate(&self, res: &FetchResponse) -> Result<()> {
+        for response in &res.list_update_responses {
+            let descriptor = ThreatDescriptor {
+                threat_type: response.threat_type,
+                platform_type: response.platform_type,
+                threat_entry_type: response.threat_entry_type,
+            };
+            let checksum = &response.checksum;
+
+            let mut hash = {
+                let mut cur_map = self.inner_db.lock().expect("Failed to attain lock for inner_db");
+
+                let cur_hashes = match cur_map.get_mut(&descriptor) {
+                    Some(h) => h,
+                    None => {
+                        info!("Could not get hashes for descriptor: {:#?}", descriptor);
+                        continue;
+                    }
+                };
+
+                cur_hashes.iter()
+                          .fold(Sha256::new(), |mut s, r| {
+                              s.input(r.as_bytes());
+                              s
+                          })
+            };
+
+            let result = {
+                hash.input(&vec![]);
+                let mut result = vec![0; 32];
+                hash.result(&mut result);
+                result
+            };
+            let hash = result;
+
+            let dec_checksum = decode(&checksum.sha256).unwrap();
+
+            if hash != dec_checksum {
+                error!("Checksum failed {:?} != {:?}",
+                       hash,
+                       checksum.sha256.as_bytes());
+            } else {
+                info!("Database validated");
+            }
+
+        }
+
+        Ok(())
     }
 
-    fn query(&self, url: &str, descriptor: ThreatDescriptor) -> Result<Option<()>> {
+    fn query(&self, _url: &str, _descriptor: ThreatDescriptor) -> Result<Option<()>> {
         unimplemented!()
     }
 }
@@ -128,6 +169,14 @@ fn additions(fetch_response: &FetchResponse)
             if let CompressionType::Raw = threat_entry.compression_type {
 
                 let raw_hashes = &threat_entry.raw_hashes;
+
+                if raw_hashes.raw_hashes.len() % raw_hashes.prefix_size as usize != 0 {
+                    error!("Raw hashes not divisible by prefix_size. Skipping update.");
+                    continue;
+                }
+
+                let hash_count = raw_hashes.raw_hashes.len() / raw_hashes.prefix_size as usize;
+                hash_prefixes.reserve(hash_count);
 
                 let init = raw_hashes.raw_hashes.as_bytes();
                 let mut ix = 0;

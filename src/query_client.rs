@@ -21,7 +21,7 @@ impl<'a, T> QueryClient<'a, T>
     pub fn new(api_key: &'a str, db: &'a T) -> QueryClient<'a, T> {
         QueryClient {
             api_key: api_key,
-            cache: LRU::new(),
+            cache: LRU::new(10_000),
             db: db,
         }
     }

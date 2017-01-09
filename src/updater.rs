@@ -46,8 +46,11 @@ impl<'a, T> GSBUpdater<'a, T>
     pub fn begin_update(&mut self) -> Result<()> {
         let mut update_client = self.update_client.lock().unwrap();
 
-        let fetch_response = update_client.fetch().send().unwrap();
-        self.db.update(&fetch_response).unwrap();
+        let fetch_response = try!(update_client.fetch().send());
+        try!(self.db.update(&fetch_response));
+
+        try!(self.db.validate(&fetch_response));
+        info!("Validated");
 
         let backoff = Self::parse_backoff(&fetch_response.minimum_wait_duration)
                           .unwrap_or(Duration::from_secs(0));
