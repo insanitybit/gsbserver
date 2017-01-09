@@ -16,6 +16,8 @@ extern crate log;
 // extern crate dotenv;
 extern crate hyper_rustls;
 extern crate hyper;
+extern crate crypto;
+extern crate base64;
 // extern crate rocksdb;
 extern crate serde_json;
 
