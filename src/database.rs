@@ -119,6 +119,9 @@ impl Database for HashDB {
                     }
                 };
 
+                cur_hashes.sort();
+                cur_hashes.dedup();
+
                 cur_hashes.iter()
                           .fold(Sha256::new(), |mut s, r| {
                               s.input(r.as_bytes());
@@ -159,7 +162,6 @@ fn additions(fetch_response: &FetchResponse)
 
     for response in &fetch_response.list_update_responses {
         let mut hash_prefixes = Vec::new();
-
         // Each set of additions will contain a string. This string is the concatenated list of
         // hash prefixes. In a single 'addition' threat entry the prefix size is the same for all
         // hashes, but the prefix size may vary across threat entries.
@@ -192,7 +194,7 @@ fn additions(fetch_response: &FetchResponse)
                 }
             }
         }
-        hash_prefixes.sort();
+
         threat_map.insert(ThreatDescriptor {
                               threat_type: response.threat_type,
                               platform_type: response.platform_type,
@@ -228,4 +230,74 @@ fn removals(fetch_response: &FetchResponse)
                           (response.response_type, raw_indices));
     }
     Ok(threat_map)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_update() {
+        let db = HashDB::new();
+        let res = fetch_req();
+
+        db.update(&res);
+    }
+
+
+    #[test]
+    fn test_additions() {
+        let res = fetch_req();
+        let addition_map = additions(&res).unwrap();
+
+        assert_eq!(addition_map.get(&ThreatDescriptor {
+                                   threat_type: ThreatType::Malware,
+                                   platform_type: PlatformType::Linux,
+                                   threat_entry_type: ThreatEntryType::Url,
+                               })
+                               .unwrap()
+                               .1,
+                   vec!["1234", "5678"]);
+    }
+
+    fn fetch_req() -> FetchResponse {
+
+        let update_res = ListUpdateResponse {
+            threat_type: ThreatType::Malware,
+            threat_entry_type: ThreatEntryType::Url,
+            platform_type: PlatformType::Linux,
+            response_type: ResponseType::FullUpdate,
+            additions: vec![ThreatEntrySet {
+                                compression_type: CompressionType::Raw,
+                                raw_hashes: RawHashes {
+                                    prefix_size: 4,
+                                    raw_hashes: "12345678".to_owned(),
+                                },
+                                raw_indices: RawIndices { indices: vec![] },
+                                rice_hashes: RiceDeltaEncoding {
+                                    first_value: "".to_owned(),
+                                    rice_parameter: 0,
+                                    num_entries: 0,
+                                    encoded_data: "".to_owned(),
+                                },
+                                rice_indices: RiceDeltaEncoding {
+                                    first_value: "".to_owned(),
+                                    rice_parameter: 0,
+                                    num_entries: 0,
+                                    encoded_data: "".to_owned(),
+                                },
+                            }],
+            removals: vec![],
+            new_client_state: "new_state".to_owned(),
+            checksum: Checksum { sha256: "".to_owned() },
+        };
+
+        FetchResponse {
+            list_update_responses: vec![update_res],
+            minimum_wait_duration: "300.4s".to_owned(),
+        }
+    }
+    //
+
 }

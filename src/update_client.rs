@@ -303,19 +303,19 @@ fn default_list_update_requests<'a>(state_map: &HashMap<(PlatformType,
                                   ThreatType::Malware))
                            .unwrap_or(&"".to_owned())
                            .clone();
-
+    info!("state_a: {:#?}", state_a);
     let state_b = state_map.get(&(PlatformType::AnyPlatform,
                                   ThreatEntryType::Url,
                                   ThreatType::SocialEngineering))
                            .unwrap_or(&"".to_owned())
                            .clone();
-
+    info!("state_b: {:#?}", state_b);
     let state_c = state_map.get(&(PlatformType::AnyPlatform,
                                   ThreatEntryType::Url,
                                   ThreatType::UnwantedSoftware))
                            .unwrap_or(&"".to_owned())
                            .clone();
-
+    info!("state_c: {:#?}", state_c);
     vec![ListUpdateRequest {
              state: state_a,
              threat_type: ThreatType::Malware,
