@@ -42,7 +42,7 @@ impl HashDB {
             let mut cur_hashes = cur_map.entry(*descriptor)
                                         .or_insert(vec![]);
 
-
+            cur_hashes.sort();
             let new_hashes: Vec<String> = cur_hashes.iter()
                                                     .enumerate()
                                                     .filter_map(|(ix, s)| {
@@ -232,7 +232,6 @@ fn removals(fetch_response: &FetchResponse)
     Ok(threat_map)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,6 +244,10 @@ mod tests {
         db.update(&res);
     }
 
+
+    // Given an empty local database the database should recieve
+    // a full update of hashes as well as a sha256 checksum
+    // Assert that the checksum is as expected.
 
     #[test]
     fn test_additions() {
