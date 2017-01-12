@@ -12,13 +12,21 @@ pub enum LRUEntry<T> {
 
 pub struct LRU<K: Hash + Eq, T> {
     cache: LruCache<K, (T, Instant, Duration)>,
+    hits: u128,
+    misses: u128,
+    exp_misses: u128,
 }
 
 impl<K, T> LRU<K, T>
     where K: Hash + Eq
 {
     pub fn new(limit: usize) -> LRU<K, T> {
-        LRU { cache: LruCache::new(limit) }
+        LRU {
+            cache: LruCache::new(limit),
+            hits: 1,
+            misses: 1,
+            exp_misses: 1,
+        }
     }
 
     pub fn insert(&mut self, key: K, val: T, lifespan: Duration) {
@@ -28,14 +36,16 @@ impl<K, T> LRU<K, T>
     pub fn get(&mut self, key: &K) -> LRUEntry<&T> {
         let (val, then, lifespan) = match self.cache.get_mut(key) {
             Some(&mut (ref val, then, lifespan)) => (val as *const T, then, lifespan),
-            None => return LRUEntry::Vacant,
+            None => {self.misses += 1; return LRUEntry::Vacant},
         };
 
         if Self::is_timed_out(then, lifespan) {
             self.cache.remove(key);
             // self.cache.take(key)
+            self.exp_misses += 1;
             LRUEntry::Expired
         } else {
+            self.hits += 1;
             LRUEntry::Present(unsafe { &*val })
         }
     }

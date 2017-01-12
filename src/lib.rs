@@ -1,4 +1,4 @@
-#![feature(custom_derive)]
+#![feature(custom_derive, i128_type)]
 
 #![allow(dead_code, unused_imports, non_upper_case_globals)]
 #![recursion_limit = "1024"]
