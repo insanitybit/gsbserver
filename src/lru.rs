@@ -36,12 +36,14 @@ impl<K, T> LRU<K, T>
     pub fn get(&mut self, key: &K) -> LRUEntry<&T> {
         let (val, then, lifespan) = match self.cache.get_mut(key) {
             Some(&mut (ref val, then, lifespan)) => (val as *const T, then, lifespan),
-            None => {self.misses += 1; return LRUEntry::Vacant},
+            None => {
+                self.misses += 1;
+                return LRUEntry::Vacant;
+            }
         };
 
         if Self::is_timed_out(then, lifespan) {
             self.cache.remove(key);
-            // self.cache.take(key)
             self.exp_misses += 1;
             LRUEntry::Expired
         } else {

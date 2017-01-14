@@ -1,11 +1,6 @@
 use update_client::*;
 use errors::*;
 use database::*;
-// use diesel::prelude::*;
-// use diesel::pg::PgConnection;
-// use dotenv::dotenv;
-//
-// use rocksdb::DB;
 
 use std;
 use std::time::Duration;
@@ -50,7 +45,6 @@ impl<'a, T> GSBUpdater<'a, T>
         try!(self.db.update(&fetch_response));
 
         try!(self.db.validate(&fetch_response));
-        info!("Validated");
 
         let backoff = Self::parse_backoff(&fetch_response.minimum_wait_duration)
                           .unwrap_or(Duration::from_secs(0));

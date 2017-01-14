@@ -17,7 +17,7 @@ pub trait Database: Send + Sync + Clone {
 
 #[derive(Clone)]
 pub struct HashDB {
-    inner_db: Arc<Mutex<HashMap<ThreatDescriptor, Vec<String>>>>,
+    inner_db: Arc<Mutex<HashMap<ThreatDescriptor, Vec<Vec<u8>>>>>,
 }
 
 impl HashDB {
@@ -43,16 +43,16 @@ impl HashDB {
                                         .or_insert(vec![]);
 
             cur_hashes.sort();
-            let new_hashes: Vec<String> = cur_hashes.iter()
-                                                    .enumerate()
-                                                    .filter_map(|(ix, s)| {
-                                                        if removals.contains(&ix) {
-                                                            Some(s.clone())
-                                                        } else {
-                                                            None
-                                                        }
-                                                    })
-                                                    .collect();
+            let new_hashes: Vec<_> = cur_hashes.iter()
+                                               .enumerate()
+                                               .filter_map(|(ix, s)| {
+                                                   if removals.contains(&ix) {
+                                                       Some(s.clone())
+                                                   } else {
+                                                       None
+                                                   }
+                                               })
+                                               .collect();
 
             *cur_hashes = new_hashes;
         }
@@ -61,7 +61,7 @@ impl HashDB {
     }
 
     fn add(&self,
-           addition_map: &HashMap<ThreatDescriptor, (ResponseType, Vec<String>)>)
+           addition_map: &HashMap<ThreatDescriptor, (ResponseType, Vec<Vec<u8>>)>)
            -> Result<()> {
 
         for (descriptor, &(response_type, ref additions)) in addition_map {
@@ -84,6 +84,15 @@ impl HashDB {
             }
         }
 
+        Ok(())
+    }
+
+    fn clear_table(&mut self, descriptor: ThreatDescriptor) -> Result<()> {
+        let mut cur_map = self.inner_db.lock().expect("Failed to attain lock for inner_db");
+
+        let mut cur_hashes = cur_map.entry(descriptor)
+                                    .or_insert(vec![]);
+        cur_hashes.clear();
         Ok(())
     }
 }
@@ -119,28 +128,26 @@ impl Database for HashDB {
                     }
                 };
 
-                cur_hashes.sort();
-                cur_hashes.dedup();
-
+                info!("Hashing {} prefixes", cur_hashes.len());
                 cur_hashes.iter()
                           .fold(Sha256::new(), |mut s, r| {
-                              s.input(r.as_bytes());
+                              s.input(r);
                               s
                           })
             };
 
-            let result = {
-                hash.input(&vec![]);
+            let hash = {
+                // hash.input(&vec![]);
                 let mut result = vec![0; 32];
                 hash.result(&mut result);
                 result
             };
-            let hash = result;
 
-            if hash != checksum.sha256.as_bytes() {
-                error!("Checksum failed {:?} != {:?}",
-                       hash,
-                       checksum.sha256.as_bytes());
+            // write_hex(&checksum.sha256.to_vec());
+
+            if hash != checksum.sha256 {
+                error!("Checksum failed {:?} != {:?}", hash, checksum.sha256);
+
             } else {
                 info!("Database validated");
             }
@@ -155,8 +162,18 @@ impl Database for HashDB {
     }
 }
 
+// fn write_hex(hex: &[u8]) {
+//     use std::fmt::Write;
+//     let mut s = String::new();
+//     for byte in hex {
+//         write!(&mut s, "{:X} ", byte).unwrap();
+//     }
+//
+//     println!("{}", s);
+// }
+
 fn additions(fetch_response: &FetchResponse)
-             -> Result<HashMap<ThreatDescriptor, (ResponseType, Vec<String>)>> {
+             -> Result<HashMap<ThreatDescriptor, (ResponseType, Vec<Vec<u8>>)>> {
 
     let mut threat_map = HashMap::new();
 
@@ -168,8 +185,15 @@ fn additions(fetch_response: &FetchResponse)
         for threat_entry in &response.additions {
             if let CompressionType::Raw = threat_entry.compression_type {
 
-                let raw_hashes = &threat_entry.raw_hashes;
+                println!("{:?}",
+                         ThreatDescriptor {
+                             threat_type: response.threat_type,
+                             platform_type: response.platform_type,
+                             threat_entry_type: response.threat_entry_type,
+                         });
 
+                let raw_hashes = &threat_entry.raw_hashes;
+                println!("{:?}", raw_hashes.raw_hashes.len());
                 if raw_hashes.raw_hashes.len() % raw_hashes.prefix_size as usize != 0 {
                     error!("Raw hashes not divisible by prefix_size. Skipping update.");
                     continue;
@@ -178,22 +202,27 @@ fn additions(fetch_response: &FetchResponse)
                 let hash_count = raw_hashes.raw_hashes.len() / raw_hashes.prefix_size as usize;
                 hash_prefixes.reserve(hash_count);
 
-                let init = raw_hashes.raw_hashes.as_bytes();
+                let init = &raw_hashes.raw_hashes;
                 let mut ix = 0;
                 loop {
                     if ix == init.len() {
                         break;
                     }
 
-                    let char_slice =
-                        try!(String::from_utf8(init[ix..ix + raw_hashes.prefix_size as usize]
-                                                   .to_vec())
-                                 .chain_err(|| "could not convert hash to utf8 string"));
+                    let char_slice = Vec::from(&init[ix..ix + raw_hashes.prefix_size as usize]);
                     ix = ix + raw_hashes.prefix_size as usize;
                     hash_prefixes.push(char_slice);
                 }
             }
         }
+
+        hash_prefixes.sort();
+        // println!("{:?}", hash_prefixes.len());
+        // for hash in hash_prefixes.clone() {
+        //     println!("{:?}", hash);
+        // }
+
+
 
         threat_map.insert(ThreatDescriptor {
                               threat_type: response.threat_type,
@@ -244,11 +273,9 @@ mod tests {
         db.update(&res);
     }
 
-
     // Given an empty local database the database should recieve
     // a full update of hashes as well as a sha256 checksum
     // Assert that the checksum is as expected.
-
     #[test]
     fn test_additions() {
         let res = fetch_req();

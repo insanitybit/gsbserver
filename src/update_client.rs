@@ -5,8 +5,11 @@ use hyper::header::Connection;
 use hyper::net::HttpsConnector;
 use hyper_rustls;
 
-use serde_json;
+use base64;
 
+use serde_json;
+use serde::bytes::ByteBuf;
+use serde::{Serializer, Deserialize, Deserializer};
 use std::io::prelude::*;
 use std::collections::HashMap;
 
@@ -17,17 +20,33 @@ pub struct ThreatDescriptor {
     pub threat_entry_type: ThreatEntryType,
 }
 
+fn as_base64<S>(key: &Vec<u8>, serializer: &mut S) -> ::std::result::Result<(), S::Error>
+    where S: Serializer
+{
+    serializer.serialize_str(&base64::encode(&key[..]))
+}
+
+fn from_base64<D>(deserializer: &mut D) -> ::std::result::Result<Vec<u8>, D::Error>
+    where D: Deserializer
+{
+    use serde::de::Error;
+    String::deserialize(deserializer)
+        .and_then(|string| base64::decode(&string).map_err(|err| Error::custom(err.to_string())))
+}
+
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Checksum {
-    pub sha256: String,
+    #[serde(serialize_with = "as_base64", deserialize_with = "from_base64")]
+    pub sha256: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RawHashes {
     #[serde(rename = "prefixSize")]
     pub prefix_size: u32,
-    #[serde(rename = "rawHashes")]
-    pub raw_hashes: String,
+    #[serde(rename = "rawHashes", serialize_with = "as_base64", deserialize_with = "from_base64")]
+    pub raw_hashes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -44,7 +63,7 @@ pub struct RiceDeltaEncoding {
     #[serde(rename = "numEntries")]
     pub num_entries: u32,
     #[serde(rename = "encodedData")]
-    pub encoded_data: String,
+    pub encoded_data: ByteBuf,
 }
 
 
@@ -130,14 +149,22 @@ pub enum CompressionType {
     Rice, // Unimplemented
 }
 
+
+fn is_zero(f: &u32) -> bool {
+    if *f == 0 {
+        true
+    } else {
+        false
+    }
+}
 /// https://developers.google.com/safe-browsing/v4/reference/rest/v4/threatListUpdates/fetch#Constraints
 #[derive(Debug, Clone, Serialize)]
 pub struct Constraints<'a> {
-    #[serde(rename = "maxDatabaseEntries")]
+    #[serde(rename = "maxDatabaseEntries", skip_serializing_if = "is_zero")]
     pub max_database_entries: u32,
-    #[serde(rename = "maxUpdateEntries")]
+    #[serde(rename = "maxUpdateEntries", skip_serializing_if = "is_zero")]
     pub max_update_entries: u32,
-    #[serde(rename = "region")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<&'a str>,
     #[serde(rename = "supportedCompressions")]
     pub supported_compressions: Vec<CompressionType>,
@@ -223,7 +250,7 @@ impl<'a> UpdateClient<'a> {
             },
             api_client_key: api_key,
             state_map: HashMap::default(),
-            client: Client::with_connector(HttpsConnector::new(hyper_rustls::TlsClient::new())),
+            client: Client::new(),
         }
     }
 
@@ -277,6 +304,8 @@ impl<'a> FetchRequest<'a> {
                         format!("Failed to read response into buffer for fetch request.")
                     }));
 
+
+
             try!(serde_json::from_slice(&buf[..])
                      .chain_err(|| format!("Failed to deserialize response into FetchResponse.")))
         };
@@ -316,20 +345,20 @@ fn default_list_update_requests<'a>(state_map: &HashMap<(PlatformType,
                            .unwrap_or(&"".to_owned())
                            .clone();
     info!("state_c: {:#?}", state_c);
-    vec![ListUpdateRequest {
-             state: state_a,
-             threat_type: ThreatType::Malware,
-             platform_type: PlatformType::AnyPlatform,
-             threat_entry_type: ThreatEntryType::Url,
-             constraints: Constraints::default(),
-         },
-         ListUpdateRequest {
-             state: state_b,
-             threat_type: ThreatType::SocialEngineering,
-             platform_type: PlatformType::AnyPlatform,
-             threat_entry_type: ThreatEntryType::Url,
-             constraints: Constraints::default(),
-         },
+    vec![// ListUpdateRequest {
+         //          state: state_a,
+         //          threat_type: ThreatType::Malware,
+         //          platform_type: PlatformType::AnyPlatform,
+         //          threat_entry_type: ThreatEntryType::Url,
+         //          constraints: Constraints::default(),
+         //      },
+         //  ListUpdateRequest {
+         //      state: state_b,
+         //      threat_type: ThreatType::SocialEngineering,
+         //      platform_type: PlatformType::AnyPlatform,
+         //      threat_entry_type: ThreatEntryType::Url,
+         //      constraints: Constraints::default(),
+         //  },
          ListUpdateRequest {
              state: state_c,
              threat_type: ThreatType::UnwantedSoftware,
