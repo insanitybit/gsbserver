@@ -44,9 +44,11 @@ impl<'a, T> GSBUpdater<'a, T>
         let fetch_response = try!(update_client.fetch().send());
         try!(self.db.update(&fetch_response));
 
-        try!(self.db.validate(&fetch_response));
+        // TODO: For now, simply leave the table cleared and do not reinitiate an update
+        let _invalid_table_descriptors = self.db.validate(&fetch_response);
 
-        let backoff = Self::parse_backoff(&fetch_response.minimum_wait_duration)
+
+        let backoff = try!(Self::parse_backoff(&fetch_response.minimum_wait_duration))
                           .unwrap_or(Duration::from_secs(0));
 
         info!("Backoff set to: {:#?}", backoff);
@@ -61,15 +63,17 @@ impl<'a, T> GSBUpdater<'a, T>
 
     // Given a string '123.45s' this will parse into a duration of '153'.
     // 30 seconds is added to any backoff returned
-    fn parse_backoff(backoff: &str) -> Option<Duration> {
+    fn parse_backoff(backoff: &str) -> Result<Option<Duration>> {
         if backoff.is_empty() {
-            None
+            Ok(None)
         } else {
-            let point_ix = backoff.find('.').unwrap();
-
+            let point_ix = backoff.find('.').unwrap_or(backoff.len() - 1);
+            // We know this can't panic because the minimum value of point_ix is 0.
+            // When the second value to a non inclusive slice is 0, an empty slice is returned.
             let backoff = &backoff[..point_ix];
-            let backoff = backoff.parse::<u64>().unwrap();
-            Some(Duration::from_secs(backoff + 30))
+            let backoff = try!(backoff.parse::<u64>()
+                                      .chain_err(|| "Failed to parse backoff into an integer"));
+            Ok(Some(Duration::from_secs(backoff + 30)))
         }
     }
 }

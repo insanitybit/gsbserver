@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 
 pub trait Database: Send + Sync + Clone {
-    fn query(&self, &str, ThreatDescriptor) -> Result<Option<()>>;
+    fn query(&self, &str) -> Result<Option<ThreatDescriptor>>;
     fn update(&self, &FetchResponse) -> Result<()>;
     fn validate(&self, &FetchResponse) -> Result<()>;
 }
@@ -87,13 +87,13 @@ impl HashDB {
         Ok(())
     }
 
-    fn clear_table(&mut self, descriptor: ThreatDescriptor) -> Result<()> {
+    fn clear_table(&self, descriptor: ThreatDescriptor) {
+        debug!("clearing table for descriptor: {:#?}", descriptor);
         let mut cur_map = self.inner_db.lock().expect("Failed to attain lock for inner_db");
 
         let mut cur_hashes = cur_map.entry(descriptor)
                                     .or_insert(vec![]);
         cur_hashes.clear();
-        Ok(())
     }
 }
 
@@ -109,6 +109,7 @@ impl Database for HashDB {
     }
 
     fn validate(&self, res: &FetchResponse) -> Result<()> {
+        let mut invalid_table_descriptors = Vec::new();
         for response in &res.list_update_responses {
             let descriptor = ThreatDescriptor {
                 threat_type: response.threat_type,
@@ -117,47 +118,46 @@ impl Database for HashDB {
             };
             let checksum = &response.checksum;
 
-            let mut hash = {
-                let mut cur_map = self.inner_db.lock().expect("Failed to attain lock for inner_db");
+            // We want to hold this lock until we're sure the table is valid, otherwise we must
+            // clear it
+            let mut cur_map = self.inner_db.lock().expect("Failed to attain lock for inner_db");
 
-                let cur_hashes = match cur_map.get_mut(&descriptor) {
-                    Some(h) => h,
-                    None => {
-                        info!("Could not get hashes for descriptor: {:#?}", descriptor);
-                        continue;
-                    }
-                };
-
-                info!("Hashing {} prefixes", cur_hashes.len());
-                cur_hashes.iter()
-                          .fold(Sha256::new(), |mut s, r| {
-                              s.input(r);
-                              s
-                          })
+            let mut cur_hashes = match cur_map.get_mut(&descriptor) {
+                Some(h) => h,
+                None => {
+                    // There isn't really any case I can imagine this happening. We would have to
+                    // have a response for a list update that we didn't request
+                    // In that circumstance, I think logging an error and moving on is the right
+                    // approach.
+                    error!("Could not get hashes for descriptor: {:#?}", descriptor);
+                    continue;
+                }
             };
 
-            let hash = {
-                // hash.input(&vec![]);
-                let mut result = vec![0; 32];
-                hash.result(&mut result);
-                result
-            };
+            cur_hashes.sort();
 
-            // write_hex(&checksum.sha256.to_vec());
+            info!("Hashing {} prefixes", cur_hashes.len());
+            let mut result = vec![0; 32];
+            let mut hash = cur_hashes.iter()
+                                     .fold(Sha256::new(), |mut s, r| {
+                                         s.input(r);
+                                         s
+                                     });
+            hash.result(&mut result);
 
-            if hash != checksum.sha256 {
-                error!("Checksum failed {:?} != {:?}", hash, checksum.sha256);
-
+            if result != checksum.sha256 {
+                error!("Checksum failed {:?} != {:?}", result, checksum.sha256);
+                invalid_table_descriptors.push(descriptor);
+                self.clear_table(descriptor)
             } else {
                 info!("Database validated");
             }
-
         }
 
         Ok(())
     }
 
-    fn query(&self, _url: &str, _descriptor: ThreatDescriptor) -> Result<Option<()>> {
+    fn query(&self, _url: &str) -> Result<Option<ThreatDescriptor>> {
         unimplemented!()
     }
 }
@@ -215,14 +215,6 @@ fn additions(fetch_response: &FetchResponse)
                 }
             }
         }
-
-        hash_prefixes.sort();
-        // println!("{:?}", hash_prefixes.len());
-        // for hash in hash_prefixes.clone() {
-        //     println!("{:?}", hash);
-        // }
-
-
 
         threat_map.insert(ThreatDescriptor {
                               threat_type: response.threat_type,
