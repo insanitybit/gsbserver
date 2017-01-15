@@ -8,9 +8,8 @@ use std;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-
 pub trait Database: Send + Sync + Clone {
-    fn query(&self, &str) -> Result<Option<ThreatDescriptor>>;
+    fn query(&self, &[u8]) -> Result<Option<ThreatDescriptor>>;
     fn update(&self, &FetchResponse) -> Result<()>;
     fn validate(&self, &FetchResponse) -> Result<()>;
 }
@@ -157,7 +156,7 @@ impl Database for HashDB {
         Ok(())
     }
 
-    fn query(&self, _url: &str) -> Result<Option<ThreatDescriptor>> {
+    fn query(&self, _url: &[u8]) -> Result<Option<ThreatDescriptor>> {
         unimplemented!()
     }
 }
@@ -185,15 +184,9 @@ fn additions(fetch_response: &FetchResponse)
         for threat_entry in &response.additions {
             if let CompressionType::Raw = threat_entry.compression_type {
 
-                println!("{:?}",
-                         ThreatDescriptor {
-                             threat_type: response.threat_type,
-                             platform_type: response.platform_type,
-                             threat_entry_type: response.threat_entry_type,
-                         });
 
                 let raw_hashes = &threat_entry.raw_hashes;
-                println!("{:?}", raw_hashes.raw_hashes.len());
+
                 if raw_hashes.raw_hashes.len() % raw_hashes.prefix_size as usize != 0 {
                     error!("Raw hashes not divisible by prefix_size. Skipping update.");
                     continue;
@@ -280,7 +273,7 @@ mod tests {
                                })
                                .unwrap()
                                .1,
-                   vec!["1234", "5678"]);
+                   vec![b"1234".to_vec(), b"5678".to_vec()]);
     }
 
     fn fetch_req() -> FetchResponse {
@@ -294,25 +287,25 @@ mod tests {
                                 compression_type: CompressionType::Raw,
                                 raw_hashes: RawHashes {
                                     prefix_size: 4,
-                                    raw_hashes: "12345678".to_owned(),
+                                    raw_hashes: b"12345678".to_vec(),
                                 },
                                 raw_indices: RawIndices { indices: vec![] },
                                 rice_hashes: RiceDeltaEncoding {
                                     first_value: "".to_owned(),
                                     rice_parameter: 0,
                                     num_entries: 0,
-                                    encoded_data: "".to_owned(),
+                                    encoded_data: vec![],
                                 },
                                 rice_indices: RiceDeltaEncoding {
                                     first_value: "".to_owned(),
                                     rice_parameter: 0,
                                     num_entries: 0,
-                                    encoded_data: "".to_owned(),
+                                    encoded_data: vec![],
                                 },
                             }],
             removals: vec![],
             new_client_state: "new_state".to_owned(),
-            checksum: Checksum { sha256: "".to_owned() },
+            checksum: Checksum { sha256: vec![] },
         };
 
         FetchResponse {

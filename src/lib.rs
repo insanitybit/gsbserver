@@ -15,6 +15,8 @@ extern crate serde;
 extern crate log;
 #[macro_use]
 extern crate maplit;
+#[macro_use]
+extern crate lazy_static;
 // extern crate dotenv;
 extern crate lru_cache;
 
@@ -24,6 +26,8 @@ extern crate crypto;
 extern crate base64;
 // extern crate rocksdb;
 extern crate serde_json;
+extern crate regex;
+extern crate url;
 
 pub mod errors;
 pub mod lru;
@@ -31,3 +35,4 @@ pub mod update_client;
 pub mod query_client;
 pub mod updater;
 pub mod database;
+pub mod gsburl;

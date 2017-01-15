@@ -44,7 +44,7 @@ pub struct Checksum {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RawHashes {
     #[serde(rename = "prefixSize")]
-    pub prefix_size: u32,
+    pub prefix_size: u8,
     #[serde(rename = "rawHashes", serialize_with = "as_base64", deserialize_with = "from_base64")]
     pub raw_hashes: Vec<u8>,
 }
@@ -63,7 +63,7 @@ pub struct RiceDeltaEncoding {
     #[serde(rename = "numEntries")]
     pub num_entries: u32,
     #[serde(rename = "encodedData")]
-    pub encoded_data: ByteBuf,
+    pub encoded_data: Vec<u8>,
 }
 
 
