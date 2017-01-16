@@ -8,7 +8,7 @@ use std::borrow::Cow;
 
 // generateHashes returns a set of full hashes for all patterns in the URL.
 fn generate_hashes(url: &str) -> Result<HashMap<String, String>> {
-    let patterns = generate_patterns(url).unwrap();
+    let patterns = generate_patterns(url);
 
     // hashes := make(map[hashPrefix]string)
     // for _, p := range patterns {
@@ -22,8 +22,8 @@ fn generate_hashes(url: &str) -> Result<HashMap<String, String>> {
 // for the input URL.
 fn generate_patterns(url: &str) -> Result<Vec<String>> {
     let hosts = try!(generate_lookup_hosts(url));
-
-    // paths, err := generateLookupPaths(url)
+    println!("{:?}", hosts);
+    let paths = try!(generate_lookup_paths(url));
     // if err != nil {
     // 	return nil, err
     // }
@@ -86,19 +86,20 @@ fn split<'a>(s: &'a str, c: &str, cutc: bool) -> (&'a str, &'a str) {
         Some(ix) => (&s[..ix], &s[ix..]),
     }
 }
-// // escape returns the percent-encoded form of the string s.
-// fn escape(s string) string {
-// 	var b u8s.Buffer
-// 	for _, c := range []u8(s) {
-// 		if c < 0x20 || c >= 0x7f || c == ' ' || c == '#' || c == '%' {
-// 			self.WriteString(fmt.Sprintf("%%%02x", c))
-// 		} else {
-// 			self.Writeu8(c)
-// 		}
-// 	}
-// 	return self.String()
-// }
-//
+// escape returns the percent-encoded form of the string s.
+fn escape(s: &str) -> String {
+    let mut b = Vec::new();
+    for c in s.as_bytes() {
+        if *c < 0x20 || *c >= 0x7f || *c == b' ' || *c == b'#' || *c == b'%' {
+            // Pad the byte so that it is always 2 bytes wide. Hex encode it.
+            b.extend_from_slice(format!("%{:02x}", c).as_bytes());
+        } else {
+            b.push(*c);
+        }
+    }
+    String::from(String::from_utf8_lossy(&b))
+}
+
 // unescape returns the decoded form of a percent-encoded string s.
 fn unescape(s: &str) -> String {
     let mut b = Vec::new();
@@ -284,18 +285,19 @@ fn parse_url(urlStr: &str) -> Result<ParsedUrl> {
     })
 }
 
-// A lazybuf is a lazily constructed path buffer. (Stolen from go stdlib)
+// A LazyBuf is a lazily constructed path buffer. (Stolen from go stdlib)
 // It supports append, reading previously appended u8s,
 // and retrieving the final string. It does not allocate a buffer
 // to hold the output until that output diverges from s.
-struct lazybuf<'a> {
+struct LazyBuf<'a> {
     pub s: &'a [u8],
     pub buf: Option<Vec<u8>>,
     pub w: usize,
 }
-impl<'a> lazybuf<'a> {
-    fn new(s: &'a [u8]) -> lazybuf {
-        lazybuf {
+
+impl<'a> LazyBuf<'a> {
+    fn new(s: &'a [u8]) -> LazyBuf {
+        LazyBuf {
             s: s,
             buf: None,
             w: 0,
@@ -330,10 +332,10 @@ impl<'a> lazybuf<'a> {
     fn to_string(&mut self) -> Result<String> {
         if let Some(ref bf) = self.buf {
             return String::from_utf8(bf[..self.w].to_vec())
-                       .chain_err(|| "Failed to convert lazybuf to string");
+                       .chain_err(|| "Failed to convert LazyBuf to string");
         }
         return String::from_utf8(self.s[..self.w].to_vec())
-                   .chain_err(|| "Failed to convert lazybuf to string");
+                   .chain_err(|| "Failed to convert LazyBuf to string");
     }
 }
 
@@ -352,7 +354,7 @@ fn clean_path(path: &str) -> String {
     // //	dotdot is index in buf where .. must stop, either because
     // //		it is the leading slash or it is a leading ../../.. prefix.
 
-    let mut out = lazybuf::new(path.as_bytes());
+    let mut out = LazyBuf::new(path.as_bytes());
     let (mut r, mut dotdot) = (0, 0);
 
     if rooted {
@@ -511,12 +513,10 @@ fn canonicalNum(s: &str, n: usize) -> Option<String> {
 // 	return u, nil
 // }
 //
-fn canonical_host(urlStr: &str) -> Result<String> {
-    let parsedURL = try!(parse_url(urlStr));
-    println!("parsedURL {:?}", parsedURL);
+fn canonical_host(url: &str) -> Result<String> {
+    let parsed_url = try!(parse_url(url));
 
-    unimplemented!()
-    // parsedURL.Host
+    Ok(parsed_url.host)
 }
 // generateLookupHosts returns a list of host-suffixes for the input URL.
 fn generate_lookup_hosts(urlStr: &str) -> Result<Vec<String>> {
@@ -535,27 +535,31 @@ fn generate_lookup_hosts(urlStr: &str) -> Result<Vec<String>> {
     let host = try!(canonical_host(urlStr));
 
     // // handle IPv4 and IPv6 addresses.
-    // u, err := url.Parse(urlStr)
-    // if err != nil {
-    // 	return nil, err
-    // }
-    // ip := net.ParseIP(strings.Trim(u.Host, "[]"))
-    // if ip != nil {
-    // 	return []string{u.Host}, nil
-    // }
-    // hostComponents := strings.Split(host, ".")
-    //
-    // numComponents := len(hostComponents) - maxHostComponents
-    // if numComponents < 1 {
-    // 	numComponents = 1
-    // }
-    //
-    // 	hosts := []string{host}
-    // 	for i := numComponents; i < len(hostComponents)-1; i++ {
-    // 		hosts = append(hosts, strings.Join(hostComponents[i:], "."))
-    // 	}
-    // 	return hosts, nil
-    unimplemented!()
+    let u = try!(Url::parse(urlStr).chain_err(|| "Failed to parse url"));
+
+    let host_components: Vec<_> = u.host_str().unwrap().split(".").collect();
+    println!("{:?}", host_components);
+
+    let numComponents = if maxHostComponents as usize <= host_components.len() {
+        host_components.len() - maxHostComponents as usize
+    } else {
+        1
+    };
+
+    let mut hosts = Vec::new();
+    hosts.push(host);
+    let mut i = numComponents;
+    loop {
+        if i >= host_components.len() - 1 {
+            break;
+        }
+
+        let hjoin = host_components[i as usize..].join(".");
+        hosts.push(hjoin);
+
+        i += 1;
+    }
+    Ok(hosts)
 }
 // fn canonicalPath(urlStr string) (string, error) {
 // 	// Note that this fntion is not used, but remains to ensure that the
@@ -567,40 +571,40 @@ fn generate_lookup_hosts(urlStr: &str) -> Result<Vec<String>> {
 // 	return parsedURL.Path, nil
 // }
 //
-// // generateLookupPaths returns a list path-prefixes for the input URL.
-// fn generateLookupPaths(urlStr string) ([]string, error) {
-// 	const maxPathComponents = 4
-//
-// 	parsedURL, err := parseURL(urlStr)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	path := parsedURL.Path
-//
-// 	paths := []string{"/"}
-// 	var pathComponents []string
-// 	for _, p := range strings.Split(path, "/") {
-// 		if p != "" {
-// 			pathComponents = append(pathComponents, p)
-// 		}
-// 	}
-//
-// 	numComponents := len(pathComponents)
-// 	if numComponents > maxPathComponents {
-// 		numComponents = maxPathComponents
-// 	}
-//
-// 	for i := 1; i < numComponents; i++ {
-// 		paths = append(paths, "/"+strings.Join(pathComponents[:i], "/")+"/")
-// 	}
-// 	if path != "/" {
-// 		paths = append(paths, path)
-// 	}
-// 	if len(parsedURL.RawQuery) > 0 {
-// 		paths = append(paths, path+"?"+parsedURL.RawQuery)
-// 	}
-// 	return paths, nil
-// }
+// generate_lookup_paths returns a list path-prefixes for the input URL.
+fn generate_lookup_paths(urlStr: &str) -> Result<Vec<String>> {
+    const maxPathComponents: usize = 4;
+
+    let parsedURL = try!(parse_url(urlStr));
+
+    let path = parsedURL.path;
+
+    let mut paths = vec!["/".to_owned()];
+    let mut pathComponents = vec![];
+    for p in path.split("/") {
+        if !p.is_empty() {
+            pathComponents.push(p);
+        }
+    }
+
+    let mut numComponents = pathComponents.len();
+
+    if numComponents > maxPathComponents {
+        numComponents = maxPathComponents;
+    }
+
+    for i in 1..numComponents {
+        paths.push(format!("/{}/", pathComponents[..i].join("/")));
+    }
+
+    if path != "/" {
+        paths.push(path.clone());
+    }
+    if parsedURL.raw_query.len() > 0 {
+        paths.push(format!("{}?{}", path, parsedURL.raw_query));
+    }
+    Ok(paths)
+}
 
 #[cfg(test)]
 mod tests {
@@ -608,7 +612,9 @@ mod tests {
 
     #[test]
     fn test_generate_hashes() {
-        generate_hashes("https://google.com/");
+        // generate_hashes("https://google.com/").unwrap();
+        // generate_hashes("https://192.16.8.2.com/").unwrap();
+        generate_hashes("http://195.127.0.11/%25%32%35/#foo").unwrap();
         // assert_eq!(canonicalize("http://host/%25%32%35").unwrap(),
         //            "http://host/%25");
         // assert_eq!(canonicalize("http://host/%25%32%35%25%32%35").unwrap(),
@@ -660,5 +666,6 @@ mod tests {
         //                .expect("http://evil.com/foo#bar#baz"),
         //            "http://evil.com/foo");
     }
+
 
 }
