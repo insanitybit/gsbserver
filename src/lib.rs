@@ -28,6 +28,7 @@ extern crate base64;
 extern crate serde_json;
 extern crate regex;
 extern crate url;
+extern crate idna;
 
 pub mod errors;
 pub mod lru;

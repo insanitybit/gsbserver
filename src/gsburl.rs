@@ -8,7 +8,8 @@ use std::borrow::Cow;
 
 // generateHashes returns a set of full hashes for all patterns in the URL.
 fn generate_hashes(url: &str) -> Result<HashMap<String, String>> {
-    let patterns = try!(generate_patterns(url));
+    let patterns = generate_patterns(url).unwrap();
+
     // hashes := make(map[hashPrefix]string)
     // for _, p := range patterns {
     // 	hashes[hashFromPattern(p)] = p
@@ -44,7 +45,7 @@ fn is_hex(c: u8) -> bool {
         false
     }
 }
-// // unhex converts a hexadecimal character to byte value in 0..15, inclusive.
+// // unhex converts a hexadecimal character to u8 value in 0..15, inclusive.
 fn unhex(c: u8) -> u8 {
     match c {
         c if {
@@ -86,16 +87,16 @@ fn split<'a>(s: &'a str, c: &str, cutc: bool) -> (&'a str, &'a str) {
     }
 }
 // // escape returns the percent-encoded form of the string s.
-// func escape(s string) string {
-// 	var b bytes.Buffer
-// 	for _, c := range []byte(s) {
+// fn escape(s string) string {
+// 	var b u8s.Buffer
+// 	for _, c := range []u8(s) {
 // 		if c < 0x20 || c >= 0x7f || c == ' ' || c == '#' || c == '%' {
-// 			b.WriteString(fmt.Sprintf("%%%02x", c))
+// 			self.WriteString(fmt.Sprintf("%%%02x", c))
 // 		} else {
-// 			b.WriteByte(c)
+// 			self.Writeu8(c)
 // 		}
 // 	}
-// 	return b.String()
+// 	return self.String()
 // }
 //
 // unescape returns the decoded form of a percent-encoded string s.
@@ -131,20 +132,20 @@ fn recursive_unescape(s: &str) -> Result<String> {
         }
         s = t;
     }
+
     bail!("Hit max recursion")
 }
 // normalizeEscape performs a recursive unescape and then escapes the string
 // exactly once. It reports an error if it was unable to unescape the string.
 fn normalize_escape(s: &str) -> Result<String> {
+    println!("normalize_escape");
     let u = try!(recursive_unescape(s));
-
-    unimplemented!()
-    // escape(u)
+    Ok(escape(&u))
 }
 // getScheme splits the url into (scheme, path) where scheme is the protocol.
 // If the scheme cannot be determined ("", url) is returned.
 fn get_scheme<'a>(url: &'a str) -> (Option<&'a str>, &'a str) {
-
+    println!("getscheme");
     for (i, c) in url.bytes().enumerate() {
         if b'a' <= c && c <= b'z' || b'A' <= c && c <= b'Z' {
             continue;
@@ -164,7 +165,8 @@ fn get_scheme<'a>(url: &'a str) -> (Option<&'a str>, &'a str) {
 
 // parseHost parses a string to get host by the stripping the
 // username, password, and port.
-fn parse_host<'a>(hostish: &'a str) -> Result<&'a str> {
+fn parse_host(hostish: &str) -> Result<String> {
+    println!("parse_host");
     let host = match hostish.rfind("@") {
         Some(i) => &hostish[i + 1..],
         None => hostish,
@@ -180,37 +182,43 @@ fn parse_host<'a>(hostish: &'a str) -> Result<&'a str> {
     }
 
     lazy_static! {
-        static ref port_re: Regex = Regex::new(":\\d+$").unwrap();
+        static ref port_re: Regex = Regex::new(r":\d+$").unwrap();
     }
     // Remove the port if it is there.
     let host = port_re.replace(host, "");
 
     // Convert internationalized hostnames to IDNA.
-    let unescaped_host = match host {
-        Cow::Borrowed(h) => unescape(h),
-        Cow::Owned(h) => unescape(&h),
+    let unescaped_host = unescape(&host);
+
+    let host = if is_unicode(&unescaped_host) {
+        match idna::domain_to_ascii(&unescaped_host) {
+            Ok(h) => h,
+            Err(e) => bail!("Failed to parse domain to ascii {:#?}", e),
+        }
+    } else {
+        host.into_owned()
     };
 
-    let host = if is_unicode(unescaped_host) {
-        tryidna.ToASCII(u)
-		if err != nil {
-			return "", err
-		}
+    lazy_static! {
+        static ref dots_re: Regex = Regex::new("[.]+").unwrap();
     }
 
-    // Remove any superfluous '.' characters in the hostname.
-    host = dotsRegexp.ReplaceAllString(host, ".")
-	host = strings.Trim(host, ".")
-    // Canonicalize IP addresses.
-	if iphost := parseIPAddress(host);    iphost != "" {
-		host = iphost
-	} else {
-		host = strings.ToLower(host)
-	}
-	return host, nil
+    let host = dots_re.replace(&host, ".");
+    let host = host.trim_matches('.');
+
+    // // Canonicalize IP addresses.
+    Ok(parseIPAddress(&host).unwrap_or(host.to_lowercase()))
+}
+
+#[derive(Debug)]
+struct ParsedUrl {
+    pub scheme: String,
+    pub host: String,
+    pub raw_query: String,
+    pub path: String,
 }
 // // parseURL parses urlStr as a url.URL and reports an error if not possible.
-fn parse_url(urlStr: &str) -> Result<String> {
+fn parse_url(urlStr: &str) -> Result<ParsedUrl> {
     // For legacy reasons, this is a simplified version of the net/url logic.
     //
     // Few cases where net/url was not helpful:
@@ -235,21 +243,21 @@ fn parse_url(urlStr: &str) -> Result<String> {
     let rest: String = rest.chars().filter(|b| *b != '\t' || *b != 'r' || *b != '\n').collect();
 
     let rest = try!(normalize_escape(&rest));
-
     let (scheme, rest) = get_scheme(&rest);
+    let (rest, query_url) = split(rest, "?", true);
     // var hostish string
-
     if !rest.starts_with("//") && scheme.is_some() {
         bail!("safebrowsing: invalid path");
     }
+
     // // Add HTTP as scheme if none.
     let (hostish, rest) = {
         match scheme {
-            Some(_) => split(&rest, "/", false),
-            None => split(&rest[2..], "/", false),
+            Some(_) => split(&rest[2..], "/", false),
+            None => split(&rest, "/", false),
         }
     };
-
+    println!("{:?} {:#?}", hostish, rest);
     let scheme = scheme.unwrap_or("http");
 
     if hostish == "" {
@@ -257,77 +265,239 @@ fn parse_url(urlStr: &str) -> Result<String> {
     }
     let host = try!(parse_host(hostish));
     // // Format the path.
-    // p := path.Clean(rest)
-    // if p == "." {
-    // 	p = "/"
-    // } else if rest[len(rest)-1] == '/' && p[len(p)-1] != '/' {
-    // 	p += "/"
-    // }
+    println!("clean path");
+    let mut p = clean_path(rest);
+    println!("cleaned {:?}", p);
+    if p == "." {
+        p = "/".to_owned();
+    } else if rest.as_bytes()[rest.as_bytes().len() - 1] == b'/' &&
+       p.as_bytes()[p.as_bytes().len() - 1] != b'/' {
+        p += "/";
+    }
     // parsedURL.Path = p
     // return parsedURL, nil
-    unimplemented!()
+    Ok(ParsedUrl {
+        scheme: scheme.to_owned(),
+        host: host,
+        raw_query: query_url.to_owned(),
+        path: p,
+    })
 }
-// func parseIPAddress(iphostname string) string {
-// 	// The Windows resolver allows a 4-part dotted decimal IP address to have a
-// 	// space followed by any old rubbish, so long as the total length of the
-// 	// string doesn't get above 15 characters. So, "10.192.95.89 xy" is
-// 	// resolved to 10.192.95.89. If the string length is greater than 15
-// 	// characters, e.g. "10.192.95.89 xy.wildcard.example.com", it will be
-// 	// resolved through DNS.
-// 	if len(iphostname) <= 15 {
-// 		match := trailingSpaceRegexp.FindString(iphostname)
-// 		if match != "" {
-// 			iphostname = strings.TrimSpace(match)
-// 		}
-// 	}
-// 	if !possibleIPRegexp.MatchString(iphostname) {
-// 		return ""
-// 	}
-// 	parts := strings.Split(iphostname, ".")
-// 	if len(parts) > 4 {
-// 		return ""
-// 	}
-// 	ss := make([]string, len(parts))
-// 	for i, n := range parts {
-// 		if i == len(parts)-1 {
-// 			ss[i] = canonicalNum(n, 5-len(parts))
-// 		} else {
-// 			ss[i] = canonicalNum(n, 1)
-// 		}
-// 		if ss[i] == "" {
-// 			return ""
-// 		}
-// 	}
-// 	return strings.Join(ss, ".")
-// }
+
+// A lazybuf is a lazily constructed path buffer. (Stolen from go stdlib)
+// It supports append, reading previously appended u8s,
+// and retrieving the final string. It does not allocate a buffer
+// to hold the output until that output diverges from s.
+struct lazybuf<'a> {
+    pub s: &'a [u8],
+    pub buf: Option<Vec<u8>>,
+    pub w: usize,
+}
+impl<'a> lazybuf<'a> {
+    fn new(s: &'a [u8]) -> lazybuf {
+        lazybuf {
+            s: s,
+            buf: None,
+            w: 0,
+        }
+    }
+
+    fn index(&mut self, i: usize) -> u8 {
+        if let Some(ref b) = self.buf {
+            b[i]
+        } else {
+            self.s[i]
+        }
+
+    }
+
+    fn append(&mut self, c: u8) {
+        if let Some(ref mut bf) = self.buf {
+
+            bf[self.w] = c;
+            self.w += 1;
+            return;
+        }
+        if self.w < self.s.len() && self.s[self.w] == c {
+            self.w += 1;
+            return;
+        }
+        let mut bf = Vec::new();
+        bf.extend_from_slice(&self.s[..self.w]);
+        self.buf = Some(bf);
+    }
+
+    fn to_string(&mut self) -> Result<String> {
+        if let Some(ref bf) = self.buf {
+            return String::from_utf8(bf[..self.w].to_vec())
+                       .chain_err(|| "Failed to convert lazybuf to string");
+        }
+        return String::from_utf8(self.s[..self.w].to_vec())
+                   .chain_err(|| "Failed to convert lazybuf to string");
+    }
+}
+
+// Stole this from the Go stdlib since I really don't want to think hard for this module.
+fn clean_path(path: &str) -> String {
+    if path.is_empty() {
+        return ".".to_owned();
+    }
+
+    let rooted = path.as_bytes()[0] == b'/';
+    let n = path.len();
+
+    // // Invariants:
+    // //	reading from path; r is index of next u8 to process.
+    // //	writing to buf; w is index of next u8 to write.
+    // //	dotdot is index in buf where .. must stop, either because
+    // //		it is the leading slash or it is a leading ../../.. prefix.
+
+    let mut out = lazybuf::new(path.as_bytes());
+    let (mut r, mut dotdot) = (0, 0);
+
+    if rooted {
+        out.append(b'/');
+        r = 1;
+        dotdot = 1;
+    }
+    let path_bytes = path.as_bytes();
+    loop {
+        if r >= n {
+            break;
+        }
+        if path_bytes[r] == b'/' {
+            r += 1;
+        } else if path_bytes[r] == b'.' && (r + 1 == n || path_bytes[r + 1] == b'/') {
+            r += 1;
+        } else if path_bytes[r] == b'.' && path_bytes[r + 1] == b'.' &&
+           (r + 2 == n || path_bytes[r + 2] == b'/') {
+            r += 2;
+
+            if out.w > dotdot {
+                out.w -= 1;
+                let mut w = out.w;
+                while out.w > dotdot && out.index(w) != b'/' {
+                    out.w -= 1;
+                    w = out.w;
+                }
+            } else if !rooted {
+                if out.w > 0 {
+                    out.append(b'/');
+                    out.append(b'.');
+                    out.append(b'.');
+                    dotdot = out.w;
+                }
+            }
+        } else {
+            if rooted && out.w != 1 || !rooted && out.w != 0 {
+                out.append(b'/');
+            }
+            // copy element
+            while r < n && path_bytes[r] != b'/' {
+                out.append(path_bytes[r]);
+
+                r += 1;
+            }
+        }
+    }
+
+    // Turn empty string into "."
+    if out.w == 0 {
+        return ".".to_owned();
+    }
+
+    out.to_string().expect("invalid utf8")
+}
+
+fn parseIPAddress(iphostname: &str) -> Option<String> {
+    // The Windows resolver allows a 4-part dotted decimal IP address to have a
+    // space followed by any old rubbish, so long as the total length of the
+    // string doesn't get above 15 characters. So, "10.192.95.89 xy" is
+    // resolved to 10.192.95.89. If the string length is greater than 15
+    // characters, e.g. "10.192.95.89 xy.wildcard.example.com", it will be
+    // resolved through DNS.
+
+    lazy_static! {
+        static ref trailing_space_re: Regex = Regex::new(r"^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) ").unwrap();
+    }
+
+    let mut iphostname = iphostname;
+
+    if iphostname.len() <= 15 {
+        let t = trailing_space_re.find(iphostname);
+
+        if let Some(m) = t {
+            let substr = &iphostname[m.start()..m.end()];
+            let substr = substr.trim();
+            iphostname = substr;
+        }
+    }
+
+    lazy_static! {
+        static ref possible_ip_re: Regex = Regex::new(r"^(?i)((?:0x[0-9a-f]+|[0-9\.])+)$").unwrap();
+    }
+
+    if !possible_ip_re.is_match(iphostname) {
+        return None;
+    }
+    let parts: Vec<_> = iphostname.split(".").collect();
+
+    if parts.len() > 4 {
+        return None;
+    }
+
+    // ss := make([]string, len(parts))
+    let mut ss = Vec::with_capacity(parts.len());
+
+    for (ix, part) in parts.iter().enumerate() {
+        if ix == parts.len() - 1 {
+            let cn = canonicalNum(part, 5 - parts.len());
+            match cn {
+                Some(n) => ss.push(n),
+                None => return None,
+            }
+
+        } else {
+            let cn = canonicalNum(part, 1);
+            match cn {
+                Some(n) => ss.push(n),
+                None => return None,
+            }
+        }
+
+
+    }
+
+    Some(ss.join("."))
+}
+// canonicalNum parses s as an integer and attempts to encode it as a '.'
+// separated string where each element is the base-10 encoded value of each u8
+// for the corresponding number, starting with the MSself. The result is one that
+// is usable as an IP address.
 //
-// // canonicalNum parses s as an integer and attempts to encode it as a '.'
-// // separated string where each element is the base-10 encoded value of each byte
-// // for the corresponding number, starting with the MSB. The result is one that
-// // is usable as an IP address.
-// //
-// // For example:
-// //	s:"01234",      n:2  =>  "2.156"
-// //	s:"0x10203040", n:4  =>  "16.32.48.64"
-// func canonicalNum(s string, n int) string {
-// 	if n <= 0 || n > 4 {
-// 		return ""
-// 	}
-// 	v, err := strconv.ParseUint(s, 0, 32)
-// 	if err != nil {
-// 		return ""
-// 	}
-// 	ss := make([]string, n)
-// 	for i := n - 1; i >= 0; i-- {
-// 		ss[i] = strconv.Itoa(int(v) & 0xff)
-// 		v = v >> 8
-// 	}
-// 	return strings.Join(ss, ".")
-// }
-//
+// For example:
+// 	s:"01234",      n:2  =>  "2.156"
+// 	s:"0x10203040", n:4  =>  "16.32.48.64"
+fn canonicalNum(s: &str, n: usize) -> Option<String> {
+    if n == 0 || n > 4 {
+        return None;
+    }
+    let mut v: u32 = match s.parse() {
+        Ok(f) => f,
+        Err(_) => return None,
+    };
+
+    let mut ss = Vec::new();
+    for i in n..0 {
+        ss.push((v & 0xff).to_string());
+        v >>= 8;
+    }
+
+    Some(ss.join("."))
+}
 // // canonicalURL parses a URL string and returns it as scheme://hostname/path.
 // // It strips off fragments and queries.
-// func canonicalURL(u string) (string, error) {
+// fn canonicalURL(u string) (string, error) {
 // 	parsedURL, err := parseURL(u)
 // 	if err != nil {
 // 		return "", err
@@ -343,6 +513,7 @@ fn parse_url(urlStr: &str) -> Result<String> {
 //
 fn canonical_host(urlStr: &str) -> Result<String> {
     let parsedURL = try!(parse_url(urlStr));
+    println!("parsedURL {:?}", parsedURL);
 
     unimplemented!()
     // parsedURL.Host
@@ -386,8 +557,8 @@ fn generate_lookup_hosts(urlStr: &str) -> Result<Vec<String>> {
     // 	return hosts, nil
     unimplemented!()
 }
-// func canonicalPath(urlStr string) (string, error) {
-// 	// Note that this function is not used, but remains to ensure that the
+// fn canonicalPath(urlStr string) (string, error) {
+// 	// Note that this fntion is not used, but remains to ensure that the
 // 	// parsedURL.Path output matches C++ implementation.
 // 	parsedURL, err := parseURL(urlStr)
 // 	if err != nil {
@@ -397,7 +568,7 @@ fn generate_lookup_hosts(urlStr: &str) -> Result<Vec<String>> {
 // }
 //
 // // generateLookupPaths returns a list path-prefixes for the input URL.
-// func generateLookupPaths(urlStr string) ([]string, error) {
+// fn generateLookupPaths(urlStr string) ([]string, error) {
 // 	const maxPathComponents = 4
 //
 // 	parsedURL, err := parseURL(urlStr)
@@ -431,13 +602,63 @@ fn generate_lookup_hosts(urlStr: &str) -> Result<Vec<String>> {
 // 	return paths, nil
 // }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//
-//     #[test]
-//     fn test_generate_hashes() {
-//         let url = "https://google.com/stuff/#frag";
-//         generate_hashes(url);
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_hashes() {
+        generate_hashes("https://google.com/");
+        // assert_eq!(canonicalize("http://host/%25%32%35").unwrap(),
+        //            "http://host/%25");
+        // assert_eq!(canonicalize("http://host/%25%32%35%25%32%35").unwrap(),
+        //            "http://host/%25%25");
+        // // FAILS
+        // // assert_eq!(canonicalize("http://host/%2525252525252525").unwrap(),
+        // //            "http://host/%25");
+        // assert_eq!(canonicalize("http://host/asdf%25%32%35asd").unwrap(),
+        //            "http://host/asdf%25asd");
+        // // assert_eq!(canonicalize("http://host/%%%25%32%35asd%%").unwrap(),
+        // //            "http://host/%25%25%25asd%25%25");
+        // assert_eq!(canonicalize("http://www.google.com/").unwrap(),
+        //            "http://www.google.com/");
+        // assert_eq!(canonicalize("http://%31%36%38%2e%31%38%38%2e%39%39%2e%32%36/%2E%73%65%63%75%72%65/%77%77%77%2E%65%62%61%79%2E%63%6F%6D/").expect("http://%31%36%38%2e%31%38"), "http://168.188.99.26/.secure/www.ebay.com/");
+        // assert_eq!(canonicalize("http://195.127.0.11/uploads/%20%20%20%20/.verify/.eBaysecur.\
+        //                          unwrap(),updateuserdataxplimnbqmn-xplmvalidateinfoswqpcml.\
+        //                          unwrap(),hgplmcx/")
+        //                .expect("tp://195.127.0.11/uplo"),
+        //            "http://195.127.0.11/uploads/%20%20%20%20/.verify/.eBaysecur.unwrap(),\
+        //             updateuserdataxplimnbqmn-xplmvalidateinfoswqpcml.unwrap(),hgplmcx/");
+        // assert_eq!(canonicalize("http://host%23.com/%257Ea%2521b%2540c%2523d%2524e%25f%255E00%252611%252A22%252833%252944_55%252B").expect("http://host%23.com/%257Ea%252"), "http://host%23.com/~a!b@c%23d$e%25f^00&11*22(33)44_55+");
+        // assert_eq!(canonicalize("http://3279880203/blah").expect("http://3279880203/blah"),
+        //            "http://195.127.0.11/blah");
+        // assert_eq!(canonicalize("http://www.google.com/blah/..")
+        //                .expect("http://www.google.com/blah/.."),
+        //            "http://www.google.com/");
+        // assert_eq!(canonicalize("www.google.com/").expect("www.google.com/"),
+        //            "http://www.google.com/");
+        // assert_eq!(canonicalize("www.google.com").expect("www.google.com"),
+        //            "http://www.google.com/");
+        // assert_eq!(canonicalize("http://www.evil.com/blah#frag")
+        //                .expect("http://www.evil.com/blah#frag"),
+        //            "http://www.evil.com/blah");
+        // assert_eq!(canonicalize("http://www.GOOgle.com/").expect("http://www.GOOgle.com/"),
+        //            "http://www.google.com/");
+        // assert_eq!(canonicalize("http://www.google.com.../").expect("http://www.google.com.../"),
+        //            "http://www.google.com/");
+        // assert_eq!(canonicalize("http://www.google.com/foo\tbar\rbaz\n2")
+        //                .expect("http://www.google.com/foo\tbar\rbaz\n2"),
+        //            "http://www.google.com/foobarbaz2");
+        // assert_eq!(canonicalize("http://www.google.com/q?").expect("http://www.google.com/q?"),
+        //            "http://www.google.com/q?");
+        // assert_eq!(canonicalize("http://www.google.com/q?r?").expect("http://www.google.com/q?r?"),
+        //            "http://www.google.com/q?r?");
+        // assert_eq!(canonicalize("http://www.google.com/q?r?s")
+        //                .expect("http://www.google.com/q?r?s"),
+        //            "http://www.google.com/q?r?s");
+        // assert_eq!(canonicalize("http://evil.com/foo#bar#baz")
+        //                .expect("http://evil.com/foo#bar#baz"),
+        //            "http://evil.com/foo");
+    }
+
+}
