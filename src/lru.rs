@@ -29,7 +29,7 @@ impl<K, T> LRU<K, T>
         }
     }
 
-    pub fn insert(&mut self, key: K, val: T, lifespan: Duration) {
+    pub fn insert(&mut self, key: &K, val: T, lifespan: Duration) {
         self.cache.insert(key, (val, Instant::now(), lifespan));
     }
 

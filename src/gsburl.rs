@@ -1,5 +1,8 @@
 use errors::*;
 
+use crypto::digest::Digest;
+use crypto::sha2::Sha256;
+
 use std::collections::*;
 use regex::*;
 use url::*;
@@ -7,34 +10,42 @@ use std::ascii::AsciiExt;
 use std::borrow::Cow;
 
 // generateHashes returns a set of full hashes for all patterns in the URL.
-fn generate_hashes(url: &str) -> Result<HashMap<String, String>> {
-    let patterns = generate_patterns(url);
+pub fn generate_hashes(url: &str) -> Result<HashMap<Vec<u8>, String>> {
+    let patterns = try!(generate_patterns(url));
 
-    // hashes := make(map[hashPrefix]string)
-    // for _, p := range patterns {
-    // 	hashes[hashFromPattern(p)] = p
-    // }
-    // return hashes, nil
-    unimplemented!()
+    let mut hashes = HashMap::with_capacity(patterns.len());
+
+    for pattern in patterns {
+        let hash = hash_from_pattern(&pattern);
+        hashes.insert(hash, pattern);
+    }
+    println!("{:?}", hashes.values());
+    Ok(hashes)
+}
+
+fn hash_from_pattern(pattern: &str) -> Vec<u8> {
+    let mut result = vec![0; 32];
+    let mut sha256 = Sha256::new();
+    sha256.input(pattern.as_bytes());
+
+    sha256.result(&mut result);
+    result
 }
 
 // generatePatterns returns all possible host-suffix and path-prefix patterns
 // for the input URL.
 fn generate_patterns(url: &str) -> Result<Vec<String>> {
     let hosts = try!(generate_lookup_hosts(url));
-    println!("{:?}", hosts);
+
     let paths = try!(generate_lookup_paths(url));
-    // if err != nil {
-    // 	return nil, err
-    // }
-    // var patterns []string
-    // for _, h := range hosts {
-    // 	for _, p := range paths {
-    // 		patterns = append(patterns, h+p)
-    // 	}
-    // }
-    // return patterns, nil
-    unimplemented!()
+
+    let mut patterns = vec![];
+    for h in &hosts {
+        for p in &paths {
+            patterns.push(format!("{}{}", h, p));
+        }
+    }
+    Ok(patterns)
 }
 
 // isHex reports whether c is a hexadecimal character.
@@ -139,14 +150,12 @@ fn recursive_unescape(s: &str) -> Result<String> {
 // normalizeEscape performs a recursive unescape and then escapes the string
 // exactly once. It reports an error if it was unable to unescape the string.
 fn normalize_escape(s: &str) -> Result<String> {
-    println!("normalize_escape");
     let u = try!(recursive_unescape(s));
     Ok(escape(&u))
 }
 // getScheme splits the url into (scheme, path) where scheme is the protocol.
 // If the scheme cannot be determined ("", url) is returned.
 fn get_scheme<'a>(url: &'a str) -> (Option<&'a str>, &'a str) {
-    println!("getscheme");
     for (i, c) in url.bytes().enumerate() {
         if b'a' <= c && c <= b'z' || b'A' <= c && c <= b'Z' {
             continue;
@@ -167,7 +176,6 @@ fn get_scheme<'a>(url: &'a str) -> (Option<&'a str>, &'a str) {
 // parseHost parses a string to get host by the stripping the
 // username, password, and port.
 fn parse_host(hostish: &str) -> Result<String> {
-    println!("parse_host");
     let host = match hostish.rfind("@") {
         Some(i) => &hostish[i + 1..],
         None => hostish,
@@ -258,7 +266,7 @@ fn parse_url(urlStr: &str) -> Result<ParsedUrl> {
             None => split(&rest, "/", false),
         }
     };
-    println!("{:?} {:#?}", hostish, rest);
+
     let scheme = scheme.unwrap_or("http");
 
     if hostish == "" {
@@ -266,9 +274,9 @@ fn parse_url(urlStr: &str) -> Result<ParsedUrl> {
     }
     let host = try!(parse_host(hostish));
     // // Format the path.
-    println!("clean path");
+
     let mut p = clean_path(rest);
-    println!("cleaned {:?}", p);
+
     if p == "." {
         p = "/".to_owned();
     } else if rest.as_bytes()[rest.as_bytes().len() - 1] == b'/' &&
@@ -533,12 +541,11 @@ fn generate_lookup_hosts(urlStr: &str) -> Result<Vec<String>> {
     const maxHostComponents: u8 = 7;
 
     let host = try!(canonical_host(urlStr));
-
+    println!("{:?}", urlStr);
     // // handle IPv4 and IPv6 addresses.
     let u = try!(Url::parse(urlStr).chain_err(|| "Failed to parse url"));
 
     let host_components: Vec<_> = u.host_str().unwrap().split(".").collect();
-    println!("{:?}", host_components);
 
     let numComponents = if maxHostComponents as usize <= host_components.len() {
         host_components.len() - maxHostComponents as usize
@@ -612,9 +619,12 @@ mod tests {
 
     #[test]
     fn test_generate_hashes() {
+        let url = r"http://google.com/";
+        let patterns = generate_patterns(url).unwrap();
+        println!("{:#?}", patterns);
         // generate_hashes("https://google.com/").unwrap();
         // generate_hashes("https://192.16.8.2.com/").unwrap();
-        generate_hashes("http://195.127.0.11/%25%32%35/#foo").unwrap();
+        // generate_hashes("http://195.127.0.11/%25%32%35/#foo").unwrap();
         // assert_eq!(canonicalize("http://host/%25%32%35").unwrap(),
         //            "http://host/%25");
         // assert_eq!(canonicalize("http://host/%25%32%35%25%32%35").unwrap(),
@@ -624,7 +634,7 @@ mod tests {
         // //            "http://host/%25");
         // assert_eq!(canonicalize("http://host/asdf%25%32%35asd").unwrap(),
         //            "http://host/asdf%25asd");
-        // // assert_eq!(canonicalize("http://host/%%%25%32%35asd%%").unwrap(),
+        // // assert_eq!(canonicalize(go).unwrap(),
         // //            "http://host/%25%25%25asd%25%25");
         // assert_eq!(canonicalize("http://www.google.com/").unwrap(),
         //            "http://www.google.com/");

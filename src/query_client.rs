@@ -1,6 +1,8 @@
-use lru::LRU;
+use lru::*;
 use update_client::ThreatDescriptor;
 use database::*;
+use errors::*;
+use gsburl::*;
 
 // This client will attempt to query (in order):
 // The database
@@ -24,5 +26,20 @@ impl<'a, T> QueryClient<'a, T>
             cache: LRU::new(10_000),
             db: db,
         }
+    }
+
+    pub fn query(&mut self, url: &str) -> Result<Vec<ThreatDescriptor>> {
+
+        let hashes = generate_hashes(url).unwrap();
+        let mut descriptors = Vec::with_capacity(hashes.len());
+
+        for hash in hashes.keys() {
+            match self.cache.get(&hash) {
+                LRUEntry::Present(h) => descriptors.push(h),
+                _ => continue,
+            }
+        }
+
+        unimplemented!();
     }
 }

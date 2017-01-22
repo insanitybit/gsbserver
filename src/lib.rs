@@ -26,6 +26,7 @@ extern crate crypto;
 extern crate base64;
 // extern crate rocksdb;
 extern crate serde_json;
+extern crate stopwatch;
 extern crate regex;
 extern crate url;
 extern crate idna;
