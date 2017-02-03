@@ -15,8 +15,11 @@ use gsbservice::lru;
 use gsbservice::updater::*;
 use gsbservice::database::*;
 use gsbservice::query_client::*;
+use gsbservice::db_actor::*;
+use gsbservice::atoms::*;
 
 use std::collections::HashMap;
+use std::sync::mpsc::*;
 
 fn main() {
     env_logger::init().unwrap();
@@ -27,26 +30,26 @@ fn main() {
 
 fn main_loop()  {
     let db = get_db();
-    let db2 = db.clone();
-    let db3 = db.clone();
 
-    let mut query_client = QueryClient::new("AIzaSyCB0IE_olGU8GTHhoWnKsRGIKyQszXmr5A", &db3);
+    let db_actor = DBActor::start_processing(db);
 
+    GSBUpdater::begin_processing("AIzaSyCB0IE_olGU8GTHhoWnKsRGIKyQszXmr5A".to_owned(), db_actor.clone());
 
+    let query_actor = QueryClient::process("AIzaSyCB0IE_olGU8GTHhoWnKsRGIKyQszXmr5A".to_owned(), db_actor);
 
-    let background_updater = std::thread::spawn(move || {
-        let mut updater = GSBUpdater::new("AIzaSyCB0IE_olGU8GTHhoWnKsRGIKyQszXmr5A", &db2);
-        loop {
-            updater.begin_update().expect("Update failed");
-        }
-    });
-
-    let query_client.query("https://google.com/").unwrap();
+    let (send, recv) = channel();
 
 
+    query_actor.send(Atoms::Query {
+        url: "https://google.com/".to_owned(),
+        receipt: send
+    }).unwrap();
 
-    background_updater.join().unwrap();
+    for msg in recv {
+        println!("{:#?}", msg);
+    }
 
+    println!("Program exiting gracefully");
 }
 
 fn get_db() -> impl Database {

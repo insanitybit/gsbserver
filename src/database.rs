@@ -8,10 +8,11 @@ use std;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-pub trait Database: Send + Sync + Clone {
-    fn query(&self, &[u8]) -> Result<Option<ThreatDescriptor>>;
+pub trait Database: 'static + Send + Sync + Clone {
+    fn query(&self, &[u8]) -> Result<Vec<ThreatDescriptor>>;
     fn update(&self, &FetchResponse) -> Result<()>;
-    fn validate(&self, &FetchResponse) -> Result<()>;
+    fn validate(&self, ThreatDescriptor, Checksum) -> Result<()>;
+    fn clear(&self, ThreatDescriptor) -> Result<()>;
 }
 
 #[derive(Clone)]
@@ -86,13 +87,14 @@ impl HashDB {
         Ok(())
     }
 
-    fn clear_table(&self, descriptor: ThreatDescriptor) {
+    fn clear_table(&self, descriptor: ThreatDescriptor) -> Result<()> {
         debug!("clearing table for descriptor: {:#?}", descriptor);
         let mut cur_map = self.inner_db.lock().expect("Failed to attain lock for inner_db");
 
         let mut cur_hashes = cur_map.entry(descriptor)
                                     .or_insert(vec![]);
         cur_hashes.clear();
+        Ok(())
     }
 }
 
@@ -107,57 +109,53 @@ impl Database for HashDB {
         Ok(())
     }
 
-    fn validate(&self, res: &FetchResponse) -> Result<()> {
+    fn clear(&self, descriptor: ThreatDescriptor) -> Result<()> {
+        self.clear_table(descriptor)
+    }
+
+    fn validate(&self, descriptor: ThreatDescriptor, checksum: Checksum) -> Result<()> {
         let mut invalid_table_descriptors = Vec::new();
-        for response in &res.list_update_responses {
-            let descriptor = ThreatDescriptor {
-                threat_type: response.threat_type,
-                platform_type: response.platform_type,
-                threat_entry_type: response.threat_entry_type,
-            };
-            let checksum = &response.checksum;
+        // We want to hold this lock until we're sure the table is valid, otherwise we must
+        // clear it
+        let mut cur_map = self.inner_db.lock().expect("Failed to attain lock for inner_db");
 
-            // We want to hold this lock until we're sure the table is valid, otherwise we must
-            // clear it
-            let mut cur_map = self.inner_db.lock().expect("Failed to attain lock for inner_db");
-
-            let mut cur_hashes = match cur_map.get_mut(&descriptor) {
-                Some(h) => h,
-                None => {
-                    // There isn't really any case I can imagine this happening. We would have to
-                    // have a response for a list update that we didn't request
-                    // In that circumstance, I think logging an error and moving on is the right
-                    // approach.
-                    error!("Could not get hashes for descriptor: {:#?}", descriptor);
-                    continue;
-                }
-            };
-
-            cur_hashes.sort();
-
-            info!("Hashing {} prefixes", cur_hashes.len());
-            let mut result = vec![0; 32];
-            let mut hash = cur_hashes.iter()
-                                     .fold(Sha256::new(), |mut s, r| {
-                                         s.input(r);
-                                         s
-                                     });
-            hash.result(&mut result);
-
-            if result != checksum.sha256 {
-                error!("Checksum failed {:?} != {:?}", result, checksum.sha256);
-                invalid_table_descriptors.push(descriptor);
-                self.clear_table(descriptor)
-            } else {
-                info!("Database validated");
+        let mut cur_hashes = match cur_map.get_mut(&descriptor) {
+            Some(h) => h,
+            None => {
+                // There isn't really any case I can imagine this happening. We would have to
+                // have a response for a list update that we didn't request
+                // In that circumstance, I think logging an error and moving on is the right
+                // approach.
+                bail!("Could not get hashes for descriptor: {:#?}", descriptor);
             }
+        };
+
+        cur_hashes.sort();
+
+        info!("Hashing {} prefixes", cur_hashes.len());
+        let mut result = vec![0; 32];
+        let mut hash = cur_hashes.iter()
+                                 .fold(Sha256::new(), |mut s, r| {
+                                     s.input(r);
+                                     s
+                                 });
+        hash.result(&mut result);
+
+        if result != checksum.sha256 {
+            error!("Checksum failed {:?} != {:?}", result, checksum.sha256);
+            invalid_table_descriptors.push(descriptor);
+            let _ = self.clear_table(descriptor);
+        } else {
+            info!("Database validated");
         }
+
 
         Ok(())
     }
 
-    fn query(&self, _url: &[u8]) -> Result<Option<ThreatDescriptor>> {
-        unimplemented!()
+    fn query(&self, _url: &[u8]) -> Result<Vec<ThreatDescriptor>> {
+        Ok(vec![])
+        // unimplemented!()
     }
 }
 

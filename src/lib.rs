@@ -37,4 +37,6 @@ pub mod update_client;
 pub mod query_client;
 pub mod updater;
 pub mod database;
+pub mod db_actor;
 pub mod gsburl;
+pub mod atoms;

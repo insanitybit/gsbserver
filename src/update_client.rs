@@ -175,7 +175,7 @@ pub struct FetchRequest<'a> {
     #[serde(skip_serializing)]
     key: &'a str,
     #[serde(rename = "client")]
-    client_info: ClientInfo<'a>,
+    client_info: ClientInfo,
     #[serde(rename = "listUpdateRequests")]
     list_update_requests: Vec<ListUpdateRequest<'a>>,
     #[serde(skip_serializing)]
@@ -193,11 +193,11 @@ pub struct FetchResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ClientInfo<'a> {
+pub struct ClientInfo {
     #[serde(rename = "clientVersion")]
     client_version: &'static str,
     #[serde(rename = "clientId")]
-    client_id: &'a str,
+    client_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -234,19 +234,19 @@ pub struct ListUpdateResponse {
 
 // A client for the Update API
 #[derive(Debug)]
-pub struct UpdateClient<'a> {
-    client_info: ClientInfo<'a>,
-    api_client_key: &'a str,
+pub struct UpdateClient {
+    client_info: ClientInfo,
+    api_client_key: String,
     state_map: HashMap<(PlatformType, ThreatEntryType, ThreatType), String>,
     client: Client,
 }
 
-impl<'a> UpdateClient<'a> {
-    pub fn new(api_key: &str) -> UpdateClient {
+impl UpdateClient {
+    pub fn new(api_key: String) -> UpdateClient {
         UpdateClient {
             client_info: ClientInfo {
                 client_version: "0.0.1",
-                client_id: "RustGSB4Server",
+                client_id: "RustGSB4Server".to_owned(),
             },
             api_client_key: api_key,
             state_map: HashMap::default(),

@@ -10,17 +10,17 @@ pub enum LRUEntry<T> {
     Vacant,
 }
 
-pub struct LRU<K: Hash + Eq, T> {
-    cache: LruCache<K, (T, Instant, Duration)>,
+pub struct LRU<'a, K: 'a + Hash + Eq, T> {
+    cache: LruCache<&'a K, (T, Instant, Duration)>,
     hits: u128,
     misses: u128,
     exp_misses: u128,
 }
 
-impl<K, T> LRU<K, T>
+impl<'a, K, T> LRU<'a, K, T>
     where K: Hash + Eq
 {
-    pub fn new(limit: usize) -> LRU<K, T> {
+    pub fn new(limit: usize) -> LRU<'a, K, T> {
         LRU {
             cache: LruCache::new(limit),
             hits: 1,
@@ -30,7 +30,8 @@ impl<K, T> LRU<K, T>
     }
 
     pub fn insert(&mut self, key: &K, val: T, lifespan: Duration) {
-        self.cache.insert(key, (val, Instant::now(), lifespan));
+        unimplemented!()
+        // self.cache.insert(key, (val, Instant::now(), lifespan));
     }
 
     pub fn get(&mut self, key: &K) -> LRUEntry<&T> {

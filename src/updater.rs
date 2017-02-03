@@ -1,6 +1,8 @@
 use update_client::*;
 use errors::*;
 use database::*;
+use db_actor::*;
+use atoms::*;
 
 use std;
 use std::time::Duration;
@@ -10,6 +12,7 @@ use std::str;
 use std::thread;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::*;
 
 enum CurrentState {
     Running,
@@ -17,44 +20,56 @@ enum CurrentState {
 }
 
 // Using the client, fetches updates periodically, storing the results in a database
-pub struct GSBUpdater<'a, T>
-    where T: 'a + Database
-{
-    update_client: Arc<Mutex<UpdateClient<'a>>>,
-    db: &'a T,
+pub struct GSBUpdater {
+    update_client: UpdateClient,
+    db_actor: Sender<Atoms>,
     period: u64,
 }
 
-unsafe impl<'a, T> Sync for GSBUpdater<'a, T> where T: 'a + Database {}
+impl GSBUpdater {
+    pub fn begin_processing(api_key: String, db_actor: Sender<Atoms>) {
 
-impl<'a, T> GSBUpdater<'a, T>
-    where T: 'a + Database
-{
-    pub fn new(api_key: &'a str, db: &'a T) -> GSBUpdater<'a, T> {
-        GSBUpdater {
-            update_client: Arc::new(Mutex::new(UpdateClient::new(api_key))),
-            db: db,
-            period: 30 * 60,
-        }
-    }
+        let (sender, receiver) = channel();
 
-    pub fn begin_update(&mut self) -> Result<()> {
-        let mut update_client = self.update_client.lock().unwrap();
+        thread::spawn(move || {
+            let mut updater = GSBUpdater {
+                update_client: UpdateClient::new(api_key),
+                db_actor: db_actor,
+                period: 30 * 60,
+            };
 
-        let fetch_response = try!(update_client.fetch().send());
-        try!(self.db.update(&fetch_response));
+            loop {
+                let fetch_response = updater.update_client
+                                            .fetch()
+                                            .send()
+                                            .expect("Failed to send fetch request");
 
-        // TODO: For now, simply leave the table cleared and do not reinitiate an update
-        let _invalid_table_descriptors = self.db.validate(&fetch_response);
+                let minimum_wait_duration = fetch_response.minimum_wait_duration.clone();
 
+                info!("Sending database update");
+                updater.db_actor
+                       .send(Atoms::Update {
+                           fetch_response: fetch_response,
+                           receipt: sender.clone(),
+                       })
+                       .expect("Database died");
 
-        let backoff = try!(Self::parse_backoff(&fetch_response.minimum_wait_duration))
-                          .unwrap_or(Duration::from_secs(0));
+                info!("Awaiting db update status");
+                receiver.recv()
+                        .expect("No one knows this GSBUpdater's name")
+                        .expect("Database failed to update!");
 
-        info!("Backoff set to: {:#?}", backoff);
-        // We have to sleep for the backoff period, or the manual period - whichever is larger
-        std::thread::sleep(std::cmp::max(backoff, Duration::from_secs(self.period)));
-        Ok(())
+                info!("Validating database (JK)");
+
+                let backoff = Self::parse_backoff(&minimum_wait_duration)
+                                  .expect("Failed to parse backoff")
+                                  .unwrap_or(Duration::from_secs(0));
+
+                info!("Backoff set to: {:#?}", backoff);
+                // We have to sleep for the backoff period, or the manual period - whichever is larger
+                std::thread::sleep(std::cmp::max(backoff, Duration::from_secs(updater.period)));
+            }
+        });
     }
 
     pub fn set_period(&mut self, period: u64) {
