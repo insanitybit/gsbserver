@@ -12,7 +12,12 @@ use std::str;
 use std::thread;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::*;
+
+use chan;
+use chan::{Sender, Receiver};
+
+use fibers::{ThreadPoolExecutor, Executor, Spawn};
+use futures;
 
 enum CurrentState {
     Running,
@@ -27,11 +32,13 @@ pub struct GSBUpdater {
 }
 
 impl GSBUpdater {
-    pub fn begin_processing(api_key: String, db_actor: Sender<Atoms>) {
+    pub fn begin_processing<H>(api_key: String, db_actor: Sender<Atoms>, executor: H)
+        where H: Spawn + Clone
+    {
 
-        let (sender, receiver) = channel();
+        let (sender, receiver) = chan::async();
 
-        thread::spawn(move || {
+        executor.spawn(futures::lazy(move || {
             let mut updater = GSBUpdater {
                 update_client: UpdateClient::new(api_key),
                 db_actor: db_actor,
@@ -51,8 +58,7 @@ impl GSBUpdater {
                        .send(Atoms::Update {
                            fetch_response: fetch_response,
                            receipt: sender.clone(),
-                       })
-                       .expect("Database died");
+                       });
 
                 info!("Awaiting db update status");
                 receiver.recv()
@@ -68,8 +74,10 @@ impl GSBUpdater {
                 info!("Backoff set to: {:#?}", backoff);
                 // We have to sleep for the backoff period, or the manual period - whichever is larger
                 std::thread::sleep(std::cmp::max(backoff, Duration::from_secs(updater.period)));
+
             }
-        });
+            Ok(())
+        }));
     }
 
     pub fn set_period(&mut self, period: u64) {

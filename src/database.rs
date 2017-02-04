@@ -1,6 +1,7 @@
 use update_client::*;
 use errors::*;
 
+use rand;
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use base64::*;
@@ -154,11 +155,19 @@ impl Database for HashDB {
     }
 
     fn query(&self, _url: &[u8]) -> Result<Vec<ThreatDescriptor>> {
+        rand_crash();
         Ok(vec![])
-        // unimplemented!()
     }
 }
 
+fn rand_crash() {
+    let choices = [true, false, false];
+    let mut rng = rand::thread_rng();
+
+    if *rand::Rng::choose(&mut rng, &choices[..]).unwrap() {
+        panic!("Random failure!");
+    }
+}
 // fn write_hex(hex: &[u8]) {
 //     use std::fmt::Write;
 //     let mut s = String::new();

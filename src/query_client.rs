@@ -6,9 +6,14 @@ use gsburl::*;
 use db_actor::*;
 use atoms::*;
 
-use std::sync::mpsc::*;
 use std::collections::HashMap;
 use std::thread;
+
+use chan;
+use chan::{Sender, Receiver};
+
+use fibers::{ThreadPoolExecutor, Executor, Spawn};
+use futures;
 
 // This client will attempt to query (in order):
 // The database
@@ -22,8 +27,11 @@ pub struct QueryClient {
 }
 
 impl QueryClient {
-    pub fn process(api_key: String, db_actor: Sender<Atoms>) -> Sender<Atoms> {
-        let (sender, receiver) = channel();
+    pub fn process<H: Spawn + Clone>(api_key: String,
+                                     db_actor: Sender<Atoms>,
+                                     executor: H)
+                                     -> Sender<Atoms> {
+        let (sender, receiver) = chan::async();
 
 
         // Send the cache the url hash + our name + the receipt
@@ -31,7 +39,8 @@ impl QueryClient {
         // Cache miss -> Send the database the url hash + our name + the receipt
         //
         let sender_c = sender.clone();
-        thread::spawn(move || {
+
+        executor.spawn(futures::lazy(move || {
             let mut client = QueryClient {
                 api_key: api_key,
                 // cache: LRU::new(10_000),
@@ -50,7 +59,8 @@ impl QueryClient {
                     _ => panic!("Unexpected message type"),
                 };
             }
-        });
+            Ok(())
+        }));
 
         sender
     }
@@ -67,8 +77,7 @@ impl QueryClient {
                     hash_prefix: hash,
                     receipt: this.clone(),
                     origin: receipt.clone(),
-                })
-                .unwrap();
+                });
         }
     }
 }

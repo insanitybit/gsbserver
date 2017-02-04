@@ -4,8 +4,15 @@
 #[macro_use]
 extern crate log;
 
+#[macro_use]
+extern crate chan;
+
+
 extern crate gsbservice;
 extern crate env_logger;
+
+extern crate fibers;
+extern crate futures;
 
 #[macro_use]
 extern crate error_chain;
@@ -14,12 +21,16 @@ use gsbservice::errors::*;
 use gsbservice::lru;
 use gsbservice::updater::*;
 use gsbservice::database::*;
+use gsbservice::supervisor::*;
 use gsbservice::query_client::*;
 use gsbservice::db_actor::*;
 use gsbservice::atoms::*;
 
+use fibers::{ThreadPoolExecutor, Executor};
+
 use std::collections::HashMap;
 use std::sync::mpsc::*;
+
 
 fn main() {
     env_logger::init().unwrap();
@@ -29,25 +40,34 @@ fn main() {
 }
 
 fn main_loop()  {
-    let db = get_db();
 
-    let db_actor = DBActor::start_processing(db);
+    let executor = ThreadPoolExecutor::new().unwrap();
 
-    GSBUpdater::begin_processing("AIzaSyCB0IE_olGU8GTHhoWnKsRGIKyQszXmr5A".to_owned(), db_actor.clone());
+    let handle = executor.handle();
 
-    let query_actor = QueryClient::process("AIzaSyCB0IE_olGU8GTHhoWnKsRGIKyQszXmr5A".to_owned(), db_actor);
+    let tmp_handle = handle.clone();
+    let db_actor = DBSupervisor::new(handle.clone(), move |sender, receiver| {
+        DBActor::create_and_monitor(sender, receiver, get_db(), &tmp_handle)
+    });
 
-    let (send, recv) = channel();
+    GSBUpdater::begin_processing("AIzaSyCB0IE_olGU8GTHhoWnKsRGIKyQszXmr5A".to_owned(), db_actor.channel.0.clone(),
+handle.clone());
 
+    let query_actor = QueryClient::process("AIzaSyCB0IE_olGU8GTHhoWnKsRGIKyQszXmr5A".to_owned(), db_actor.channel.0,
+handle);
 
-    query_actor.send(Atoms::Query {
-        url: "https://google.com/".to_owned(),
-        receipt: send
-    }).unwrap();
+    let (send, _) = chan::async();
 
-    for msg in recv {
-        println!("{:#?}", msg);
+    for _ in 0..100 {
+
+        query_actor.send(Atoms::Query {
+            url: "https://google.com/".to_owned(),
+            receipt: send.clone()
+        });
     }
+
+    let _ = executor.run();
+
 
     println!("Program exiting gracefully");
 }

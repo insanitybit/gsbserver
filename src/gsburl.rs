@@ -19,7 +19,6 @@ pub fn generate_hashes(url: &str) -> Result<HashMap<Vec<u8>, String>> {
         let hash = hash_from_pattern(&pattern);
         hashes.insert(hash, pattern);
     }
-    println!("{:?}", hashes.values());
     Ok(hashes)
 }
 
@@ -541,7 +540,6 @@ fn generate_lookup_hosts(urlStr: &str) -> Result<Vec<String>> {
     const maxHostComponents: u8 = 7;
 
     let host = try!(canonical_host(urlStr));
-    println!("{:?}", urlStr);
     // // handle IPv4 and IPv6 addresses.
     let u = try!(Url::parse(urlStr).chain_err(|| "Failed to parse url"));
 

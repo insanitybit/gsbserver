@@ -7,7 +7,8 @@ use db_actor::*;
 use query_client::*;
 use update_client::*;
 
-use std::sync::mpsc::*;
+use chan;
+use chan::{Sender, Receiver};
 
 #[derive(Debug, Clone)]
 pub enum Atoms {

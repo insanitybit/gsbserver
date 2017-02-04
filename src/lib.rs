@@ -6,6 +6,8 @@
 // #[macro_use]
 // extern crate diesel;
 #[macro_use]
+extern crate chan;
+#[macro_use]
 extern crate error_chain;
 #[macro_use]
 extern crate serde_derive;
@@ -30,6 +32,10 @@ extern crate stopwatch;
 extern crate regex;
 extern crate url;
 extern crate idna;
+extern crate rand;
+
+extern crate fibers;
+extern crate futures;
 
 pub mod errors;
 pub mod lru;
@@ -40,3 +46,4 @@ pub mod database;
 pub mod db_actor;
 pub mod gsburl;
 pub mod atoms;
+pub mod supervisor;

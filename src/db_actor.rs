@@ -4,9 +4,18 @@ use database::*;
 use query_client::*;
 use atoms::*;
 
-use std::sync::mpsc::*;
+use chan;
+use chan::{Sender, Receiver};
+
 use std::collections::HashMap;
 use std::thread;
+use std::cell::RefCell;
+
+use fibers::{ThreadPoolExecutor, Executor, Spawn};
+
+use fibers::sync::oneshot::Monitor;
+use futures;
+use futures::future::*;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DBState {
@@ -14,48 +23,66 @@ pub enum DBState {
     Invalid,
 }
 
-pub struct DBActor<T>
-    where T: Database
-{
-    inner_db: T,
+#[derive(Clone)]
+pub struct DBActor {
+    pub channel: (Sender<Atoms>, Receiver<Atoms>),
 }
 
-impl<T> DBActor<T>
-    where T: Database
-{
-    pub fn start_processing(db: T) -> Sender<Atoms> {
-        let (sender, receiver) = channel();
+impl DBActor {
+    pub fn create<T, H>(mut db: T, executor: H) -> DBActor
+        where T: Database,
+              H: Spawn + Clone
+    {
 
-        thread::spawn(move || {
-            let mut db_actor = DBActor { inner_db: db };
+        let (sender, receiver) = chan::async();
+
+        DBActor::create_and_monitor(sender, receiver, db, &executor).0
+
+    }
+
+    pub fn create_and_monitor<T, H>(sender: Sender<Atoms>,
+                                    receiver: Receiver<Atoms>,
+                                    mut db: T,
+                                    executor: &H)
+                                    -> (DBActor, Monitor<(), ErrorKind>)
+        where T: Database,
+              H: Spawn + Clone
+    {
+
+        let receiver_handle = receiver.clone();
+        let monitor = executor.spawn_monitor(futures::lazy(move || {
             loop {
                 info!("Receiving next message");
-                let msg = receiver.recv()
-                                  .expect("Sender failed. No one knows the name of this DBActor.");
+                let msg = receiver_handle.recv()
+                                         .expect("Sender failed. No one knows the name of this \
+                                                  DBActor.");
                 match msg {
                     Atoms::DBQuery { hash_prefix, receipt, origin } => {
-                        db_actor.query(hash_prefix, receipt, origin)
+                        DBActor::query(&mut db, hash_prefix, receipt, origin)
                     }
                     Atoms::Validate { threat_descriptor, checksum, receipt } => {
-                        db_actor.validate(threat_descriptor, checksum, receipt)
+                        DBActor::validate(&mut db, threat_descriptor, checksum, receipt)
                     }
                     Atoms::Clear { threat_descriptor, receipt } => {
-                        db_actor.clear(threat_descriptor, receipt)
+                        DBActor::clear(&mut db, threat_descriptor, receipt)
                     }
                     Atoms::Update { fetch_response, receipt } => {
-                        db_actor.update(fetch_response, receipt)
+                        DBActor::update(&mut db, fetch_response, receipt)
                     }
                     _ => panic!("Unexpected msg type"),
                 }
             }
-        });
+            Ok(())
+        }));
 
-        sender
+        (DBActor { channel: (sender, receiver) }, monitor)
     }
 
-    fn query(&mut self, hash_prefix: Vec<u8>, receipt: Sender<Atoms>, origin: Sender<Atoms>) {
+    fn query<T>(db: &mut T, hash_prefix: Vec<u8>, receipt: Sender<Atoms>, origin: Sender<Atoms>)
+        where T: Database
+    {
         info!("Received query message");
-        let res = self.inner_db.query(&hash_prefix[..]).unwrap_or(vec![]);
+        let res = db.query(&hash_prefix[..]).unwrap_or(vec![]);
         // We don't care if they died :)
         let _ = receipt.send(Atoms::DBQueryResponse {
             hash_prefix: hash_prefix,
@@ -64,25 +91,38 @@ impl<T> DBActor<T>
         });
     }
 
-    fn validate(&mut self,
-                threat_descriptor: ThreatDescriptor,
-                checksum: Checksum,
-                receipt: Sender<DBState>) {
+    fn validate<T>(db: &mut T,
+                   threat_descriptor: ThreatDescriptor,
+                   checksum: Checksum,
+                   receipt: Sender<DBState>)
+        where T: Database
+    {
         info!("Received validate message");
         // We don't care if they died :)
-        let _ = match self.inner_db.validate(threat_descriptor, checksum) {
+        let _ = match db.validate(threat_descriptor, checksum) {
             Ok(_) => receipt.send(DBState::Valid),
             Err(_) => receipt.send(DBState::Invalid),
         };
     }
 
-    fn clear(&mut self, threat_descriptor: ThreatDescriptor, receipt: Sender<Result<()>>) {
+    fn clear<T>(db: &mut T, threat_descriptor: ThreatDescriptor, receipt: Sender<Result<()>>)
+        where T: Database
+    {
         info!("Received clear message");
-        let _ = receipt.send(self.inner_db.clear(threat_descriptor));
+        let _ = receipt.send(db.clear(threat_descriptor));
     }
 
-    fn update(&mut self, response: FetchResponse, receipt: Sender<Result<()>>) {
+    fn update<T>(db: &mut T, response: FetchResponse, receipt: Sender<Result<()>>)
+        where T: Database
+    {
         info!("Received update message");
-        let _ = receipt.send(self.inner_db.update(&response));
+        let _ = receipt.send(db.update(&response));
     }
+}
+
+fn rand_bool() -> bool {
+    use rand;
+    let choices = [true, false, false];
+    let mut rng = rand::thread_rng();
+    *rand::Rng::choose(&mut rng, &choices[..]).unwrap()
 }
